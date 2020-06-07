@@ -53,11 +53,12 @@ globalWindow = None
 parser = argparse.ArgumentParser(description='Onward Custom Map Downloader version %s' %(appVersion))
 parser.add_argument('-rating', type=int,
 					help='Rating Filter: Only install maps that have this star rating or better')
-parser.add_argument("-noGUI", help="Disable the GUI and run in console mode")        
+parser.add_argument("-noGUI", help="Disable the GUI and run in console mode", action='store_true')
+parser.add_argument("-justUpdate", help="Only download updates for maps already installed", action='store_true')
+parser.add_argument("-justNew", help="Install only new maps (RELEASE DATE after the last Last_Date_Run in XML settings file) regardless of rating", action='store_true')               
 parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format") 
 
 args = parser.parse_args()
-
 ###############################################################################
 # Create Default Settings for if the settings file is missing
 ###############################################################################
@@ -74,7 +75,7 @@ def createDefaultSettings():
 	
 	rFilter = etree.SubElement(exlude, 'Ratings_Filter')
 	
-	runDate.text=str(datetime.date.today())
+	runDate.text=str(datetime.date.today().strftime("%m/%d/%Y"))
 	mlURL.text = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
 	mlFN.text = 'Map List.csv'
 	DelZIPs.text = 'True'
@@ -119,7 +120,7 @@ def updateLastRunDate():
 	loadSettings()
 	try:
 		runDate = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Last_Date_Run')
-		runDate[0].text=datetime.date.today()
+		runDate[0].text=datetime.date.today().strftime("%m/%d/%Y")
 	except: 
 		reportMessage('***ERROR*** Unable to update last run date. Your "Onward Custom Map Sync Settings.xml" might be corrupted....')
 		reportMessage('***ERROR***		You can erase this file and run the program again and it will create a new one with default settings')
@@ -368,6 +369,8 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 				event, values = progressBarsGUI.read(timeout=0)
 				if event == 'Cancel' or event == None:
 					progressBarsGUI.close()
+					global globalWindow
+					globalWindow=None
 					return False					
 
 		""" Disabled throttling for now				
@@ -423,8 +426,17 @@ def get_url_from_gdrive_confirmation(contents):
 #	"" if map isn't filterd otherwise returns the type of filter detected
 #	as a string
 ###############################################################################
-def filterMap(mapID, mapName, mapAuthor, mapRating):
+def filterMap(mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 	filterMsg = ""
+	
+	if args.justNew is True:
+		try:
+			runDate = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Last_Date_Run')
+			lastCheckDate=date(runDate[0].text)
+		except:
+			lastCheckDate=datetime.date.today()
+		if date(mapReleaseDate) <= lastCheckDate:
+			return "FILTERED BY: NOT A NEW RELEASE"
 	
 	# mapRating going to be a string so convert it to an integer
 	try:
@@ -504,7 +516,7 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	
 	# Download the Google Drive file
 	downloadName=onwardPath + mapID + ".zip"
-
+	
 	if "DRIVE.GOOGLE.COM" in mapDownloadURL.upper():
 		if downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI) == False:
 			return False
@@ -594,104 +606,93 @@ def getXMLRatingFilter():
 ###############################################################################
 # Start Downloading Maps
 ###############################################################################
-def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
-	global globalWindow
-	oldglobalWindow=globalWindow
-
-	l=len(maps["MAP NAME"])
+def startDownload(progressBarsGUI=False):
+	summaryData={}
+	summaryData=processFilters()
 	
+	if summaryData["totalToInstall"] == 0:
+		reportMessage("***INFO*** No maps to install")
+		return
+		
 	# If the user is in GUI mode disable the window from accepting input while 
 	#	downloading and create the progress bars window
-	window=None
-
-	mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='MAP_PROGRESS_TEXT')
-	mapProgress=sg.ProgressBar(1, orientation='h', size=(54, 20), key='MAP_PROGRESS')
-	allProgressText=sg.Text('Total Progress: Map 1 of %d' % totalMapsToDownload, key='ALL_PROGRESS_TEXT')
-	allProgress=sg.ProgressBar(l, orientation='h', size=(54, 20), key='ALL_PROGRESS')
-
-	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font="monospace 7", key='INSTALL_LOG')
-	installLogObjs=[[installLog]]
-	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
+	global globalWindow
+	oldglobalWindow=globalWindow
 	
+	window=None	
 	if progressBarsGUI is not False:
-		if totalMapsToDownload == 0:
+		if summaryData["totalToInstall"] == 0:
 			sg.popup("You have no maps marked for download.", title="Warning")
 			return
-			
+
+		mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='MAP_PROGRESS_TEXT')
+		mapProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='MAP_PROGRESS')
+		allProgressText=sg.Text('Total Progress: Map 1 of %d' % (summaryData["totalToInstall"]), key='ALL_PROGRESS_TEXT')
+		allProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='ALL_PROGRESS')
+
+		installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="monospace 7", key='INSTALL_LOG')
+		installLogObjs=[[installLog]]
+		installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
+	
 		# layout the form
 		layout = 	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[installLogFrame],[sg.Cancel()]]
 
 		# create the form
 		window = sg.Window('Download Progress', layout)
 		
-		globalWindow=window
-		
-		
-	ratingFilter=getXMLRatingFilter()
-			
-	totalMapsInstalled=0
-	totalMapsAlreadyInstalled=0	
-	totalMapsSkippedRating=0
-	totalMapsExcluded=0
-	totalMapsFailed=0
+		# We set the global window to the current progress bar window so the function reportMessage() is displaying messages to
+		#	the currently active window. Once downloads finish or are aborted we switch it back to the main window.
+		globalWindow=window 
+
 	
 	# Traverse the list of maps		
 	#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
+#	summaryData.update({	"totalToInstall":0, 	"totalAlreadyInstalled":0, 																\
+#							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0, 	"totalSkippedNotNewRlease":0,		\
+#							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
+
+	l=len(maps["MAP NAME"])
+	installCount=0
 	for i in range(0,l):
+		if window is None:
+			break
+			
 		# Update the progress bar
 		if progressBarsGUI is not False:
 			# check to see if the cancel button was clicked and exit loop if clicked
 			event, values = window.read(timeout=0)
 			if event == 'Cancel' or event == None:
+				globalWindow=oldglobalWindow
 				break		
 				
 			mapProgressText.Update(value='Downloading Map: %s' % maps["MAP NAME"][i])
-			allProgressText.Update(value='Total Progress: Map %d of %d' % (i, totalMapsToDownload))
-			allProgress.update_bar(totalMapsInstalled, totalMapsToDownload)	
-			#window.Refresh()			
+			allProgressText.Update(value='Total Progress: Map %d of %d' % (installCount, summaryData["totalToInstall"]))
+			allProgress.update_bar(installCount, summaryData["totalToInstall"])			
 			
-			
-		# If no rating is defined set it to 0 so the filter works properly.
-#		if maps["RATING"][i].isnumeric() is False:
-#			maps["RATING"][i]="0";
-		
-		# Don't download maps that have a lower star rating that the user specified
-		rating=0
-		try:
-			raint=int(maps["RATING"][i])
-		except:
-			rating=0
-		if rating < ratingFilter:
-			totalMapsSkippedRating = totalMapsSkippedRating + 1
-			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i].ljust(30), maps["ID"][i]))	
-			continue	
-
-		# Check for custom filters - Specific Map or Specific Author
-		if filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i]) != "":
-			totalMapsExcluded = totalMapsExcluded + 1
-			continue				
-			
-		# Verify the map isn't already installed
-		if needMap(maps["ID"][i], maps["INFO HASH"][i]) != "INSTALLED":
-			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
+		if maps["MISC FIELDS"][i] in ["REINSTALL", "DOWNLOAD", "UPDATE"]:
+			reportMessage("***DOWNLOADING*** MAP %d of %d: NAME: %s by %s size:%smb" % (installCount, summaryData["totalToInstall"], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i]))
 			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=False, progressBarsGUI=window) is True:
-				totalMapsInstalled = totalMapsInstalled + 1
-				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
+					installCount = installCount + 1
+					reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
 			else:
-				totalMapsFailed = totalMapsFailed + 1
-				reportMessage("\n***ERROR*** Map    \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
+					summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
+					reportMessage("\n***ERROR*** Map    \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
 		else:
-			totalMapsAlreadyInstalled = totalMapsAlreadyInstalled + 1
-			reportMessage("***SKIPPING MAP***    \"%s\" by %s\tID: %s \tAlready installed." %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i]))
+			reportMessage("***INFO*** Skipped installing %s by %s --- %s" % (maps["MAP NAME"][i], maps["AUTHOR"][i], maps["MISC FIELDS"][i]))
 			
-	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsExcluded, totalMapsFailed, l))
+	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" \
+		% (installCount, summaryData["totalAlreadyInstalled"], summaryData["totalSkippedRating"], summaryData["totalExcluded"], summaryData["totalMapsFailed"], l))
 
 	if progressBarsGUI is False:
 		os.system("pause")
 	else:
-		globalWindow=oldglobalWindow	
-		#globalWindow["installLog"].update(installLog.get(), append=False)	# Move the install log to the main window
-		window.close()
+		if window != None:
+			globalWindow=oldglobalWindow	# Switch back to the main UI window so reportMessage() is displaying in the correct place
+			try:
+				globalWindow["INSTALL_LOG"].update(installLog.get(), append=False)	# Move the install log to the main window
+			except:
+				pass
+			window.close()
 
 
 
@@ -777,12 +778,11 @@ def displayGUI():
 	startDownloadBtn=sg.Button(button_text="Download", key='DOWNLOAD')
 	
 	
-	SchedList=["Use All Filters", "Only Update Existing Maps", "Update Existing & Download New Releases"]
-	SchedTime=["Daily", "Weekly"]
+	SchedList=["Use Current Filters", "Only Update Existing Maps", "Update Existing & Download New Releases"]
 	SchedListCombobox=sg.Combo(SchedList, readonly=True, visible=True, size=(30,1), default_value=SchedList[0], font='Courier 10')
-	taskSchedBtn=sg.Button(button_text="Schedule", key='SCHEDULE TASK')
+	taskSchedBtn=sg.Button(button_text="Schedule", key='Add to Scheduler')
 	schedObjs=[[SchedListCombobox, taskSchedBtn]]
-	taskSchedFrame=sg.Frame(title="Add Entry Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
+	taskSchedFrame=sg.Frame(title="Automaticall run daily via Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
 		
 	###########################################################################
 	# Layout of GUI
@@ -838,7 +838,7 @@ def displayGUI():
 		
 		elif event == "DOWNLOAD":
 			window.Disappear()
-			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalToInstall"])
+			startDownload(progressBarsGUI=True)
 			#updateMapData(window, summaryData)
 			window.Reappear()
 
@@ -853,46 +853,14 @@ def updateMapData(window, summaryData):
 	summaryLine=window['SUMMARY_LINE']
 	installLog=window['INSTALL_LOG']
 	
-	summaryData.clear()
-	summaryData.update({	"totalToInstall":0, 	"totalAlreadyInstalled":0, 								\
-							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0,		\
-							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
-	
-	ratingFilter=getXMLRatingFilter()
+	summaryData={}
+	summaryData=processFilters()
 
-	l=len(maps["MAP NAME"])
-	#Setup the map list table
-	tableData = []
-	summaryData["totalMaps"]=l
+	tableData=[]
 	
+	l=len(maps["MAP NAME"])	
 	for i in range(0,l):
-		status=""
-		
-		needStatus=needMap(maps["ID"][i], maps["INFO HASH"][i])
-		filterStatus=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
-		if needStatus == "INSTALLED":
-			summaryData["totalAlreadyInstalled"]=summaryData["totalAlreadyInstalled"]+1
-			status=needStatus
-		elif needStatus in ["REINSTALL", "DOWNLOAD"] and filterStatus == "":
-			summaryData["totalToInstall"]=summaryData["totalToInstall"]+1	
-			status=needStatus
-		else:
-			status=filterStatus
-			if status.find("RATING") != -1:
-				summaryData["totalSkippedRating"]=summaryData["totalSkippedRating"]+1
-			elif status.find("AUTHOR") != -1:
-				summaryData["totalSkippedAuthor"]=summaryData["totalSkippedAuthor"]+1
-			elif status.find("MAP NAME") != -1:
-				summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1	
-			summaryData["totalExcluded"]=summaryData["totalExcluded"]+1			
-		
-		# Special case where we don't have a map installed but rating is -1 meaning author doesn't want distribution
-		if status==needStatus and filterStatus.find("UNAVAILBLE") != -1:
-			status=filterStatus
-			summaryData["totalToInstall"]=summaryData["totalToInstall"]-1
-			summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1
-		
-		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], status,  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
+		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], maps["MISC FIELDS"][i],  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
 		
 
 	summaryText="Total To Download:%d\tAlready Installed:%d\tTotal Maps: %d\nBy Rating:%d\tBy Author:%d\tBy Name:%d\tTotal Exlcuded:%d" \
@@ -909,6 +877,58 @@ def updateMapData(window, summaryData):
 	else:
 		window["AUTHOR"].update(text="EXCLUDE")		
 
+
+###############################################################################
+# Traverse the list of maps and keep track of which maps to download or skip
+###############################################################################
+def processFilters():
+	summaryData={}
+	summaryData.update({	"totalToInstall":0, 	"totalAlreadyInstalled":0, 																\
+							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0, 	"totalSkippedNotNewRlease":0,		\
+							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
+	
+	ratingFilter=getXMLRatingFilter()
+
+	l=len(maps["MAP NAME"])
+	summaryData["totalMaps"]=l
+	
+	for i in range(0,l):
+		status=""
+		
+		needStatus=needMap(maps["ID"][i], maps["INFO HASH"][i])
+		filterStatus=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i])
+		# If a map is already installed flag to skip it
+		if needStatus == "INSTALLED":
+			summaryData["totalAlreadyInstalled"]=summaryData["totalAlreadyInstalled"]+1
+			status=needStatus
+		# If we use the -justUpdate flag and an update is available download it regardless of any filters.
+		# Otherwise only download if we need it and there are no filters.
+		elif (needStatus == "UPDATE" and args.justUpdate is True) or (needStatus in ["UPDATE", "REINSTALL", "DOWNLOAD"] and filterStatus == "" and args.justUpdate is False):
+			summaryData["totalToInstall"]=summaryData["totalToInstall"]+1	
+			status=needStatus
+		else:
+			status=filterStatus 
+			if status.find("RATING") != -1:
+				summaryData["totalSkippedRating"]=summaryData["totalSkippedRating"]+1
+			elif status.find("AUTHOR") != -1:
+				summaryData["totalSkippedAuthor"]=summaryData["totalSkippedAuthor"]+1
+			elif status.find("MAP NAME") != -1:
+				summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1
+			elif status.find("NOT A NEW RELEASE") != -1:
+				summaryData["totalSkippedNotNewRlease"]=summaryData["totalSkippedNotNewRlease"]+1
+			summaryData["totalExcluded"]=summaryData["totalExcluded"]+1			
+		
+		# Special case where we don't have a map installed but rating is -1 meaning author doesn't want distribution
+		if status==needStatus and filterStatus.find("UNAVAILBLE") != -1:
+			status=filterStatus
+			summaryData["totalToInstall"]=summaryData["totalToInstall"]-1
+			summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1
+		
+		maps["MISC FIELDS"][i]=status
+		
+	return summaryData
+	
+	
 ###############################################################################
 # Add/Remove or Check if a map filter exists in the XML data
 ###############################################################################
@@ -938,8 +958,18 @@ def processXMLFilter(method, tag, text=None):
 # Obtain the custom map list from Google Doc and install missing maps
 ###############################################################################
 if __name__ == "__main__":
-
-	
+	# Hide the terminal window if running in GUI mode
+	# Found how to do this from https://github.com/pyinstaller/pyinstaller/issues/1339#issuecomment-122909830
+	if args.noGUI is False:
+		if sys.platform.lower().startswith('win'):
+			import ctypes
+		whnd = ctypes.windll.kernel32.GetConsoleWindow()
+		if whnd != 0:
+			#ctypes.windll.user32.ShowWindow(whnd, 0)
+		# if you wanted to close the handles...
+		#ctypes.windll.kernel32.CloseHandle(whnd)			
+			pass
+			
 	if args.scheduleDaily is not None:
 		#createTask(args.scheduleDaily)
 		exit()
@@ -999,9 +1029,9 @@ if __name__ == "__main__":
 
 
 	# Display the GUI or if -noGUI specified just start downloading
-	if args.noGUI is not None:
+	if args.noGUI is True:
 		startDownload()
-	else:
+	else:	
 		displayGUI()
 
 	
@@ -1019,7 +1049,14 @@ if __name__ == "__main__":
 	if downloadedAnything is True:
 		updateLastRunDate()
 
-
+	# If the user happens to be running this from command prompt 
+	if args.noGUI is False:
+		if sys.platform.lower().startswith('win'):
+			import ctypes
+		whnd = ctypes.windll.kernel32.GetConsoleWindow()
+		if whnd != 0:
+			#ctypes.windll.user32.ShowWindow(whnd, 1)
+			pass
 
 	
 
