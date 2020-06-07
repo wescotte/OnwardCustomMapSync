@@ -50,6 +50,7 @@ parser.add_argument("-noGUI", help="Disable the GUI and run in console mode")
 parser.add_argument("-quiet", help="Disable all output and log to a text file instead")
 parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format") 
 
+args = parser.parse_args()
 
 ###############################################################################
 # Create Default Settings for if the settings file is missing
@@ -245,7 +246,7 @@ def createTask(timeToRun):
 ###############################################################################	
 def reportMessage(message):
 	print(message)
-
+	
 ###############################################################################
 # Download a file from Google Drive
 # Adapted from gdown library
@@ -491,11 +492,29 @@ def getHash(filename):
    return h.hexdigest()
    
 
-
+###############################################################################
+# Get the rating filter from command line argument or XML setting
+###############################################################################
+def getRatingFilter():
+	# Set the rating filter. If nothing is specififed use value in XML settings. If that doesn't exist default 0 / All maps
+	if args.rating is not None and args.rating > 0:
+		ratingFilter=args.rating
+	else:
+		rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Ratings_Filter')
+		try: 
+			ratingFilter=int(rf[0].text)
+		except:
+			ratingFilter=0
+			
+	return ratingFilter
+			
+			
 ###############################################################################
 # Start Downloading Maps
 ###############################################################################
 def startDownload():
+	ratingFilter=getRatingFilter()
+			
 	l=len(maps["MAP NAME"])
 	
 	totalMapsInstalled=0
@@ -542,18 +561,16 @@ def startDownload():
 ###############################################################################
 # Setup the GUI
 ###############################################################################
-def displayGUI():
-	l=len(maps["MAP NAME"])
-	
+def displayGUI():	
 	totalMapsInstalled=0
 	totalMapsAlreadyInstalled=0	
 	totalMapsSkippedRating=0
 	totalMapsExcluded=0
 	totalMapsFailed=0
 
-
-
-	
+	tableData=populatTable()
+	"""
+	l=len(maps["MAP NAME"])	
 	#Setup the map list table
 	rows, cols = (l, 6) 
 	tableData = [[""]*cols]*rows 
@@ -569,9 +586,11 @@ def displayGUI():
 		else:
 			status=needMap(maps["ID"][i], maps["INFO HASH"][i])
 		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
+	"""
 
 
 	# Create table object
+	headings=["Map Name", "Author", "Stars", "Published", "Updated", "Status"]	
 	table=sg.Table(values=tableData[1:][:], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
@@ -584,30 +603,30 @@ def displayGUI():
 					header_font='Courier 13',
 					tooltip='This is a table')
 
-	#from pprint import pprint
-	#pprint(vars(table))
-
 	
 	# ------ Window Layout ------
-	settingsObjs=[sg.Button(button_text="Load", key='Load'), sg.Button(button_text="Save", key='Save'), sg.Button(button_text="Default", key='Default')]
-	settingFrame=sg.Frame(title="Settings", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs]) 
+	settingsObjs=[sg.Button(button_text="Load", size=(8,1), font='Courier 8', key='Load'), sg.Button(button_text="Save", size=(8,1), font='Courier 8', key='Save'), sg.Button(button_text="Default", size=(8,1), font='Courier 8',key='Default')]
+	taskSchedObjs=[sg.Button(button_text="Schedule", size=(8,1), font='Courier 8', key='Schedule')]
+	settingFrame=sg.Frame(title="Settings", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs, taskSchedObjs]) 
 
 	# Setup Author Filte
 	authorList=list(set( maps["AUTHOR"])) # Get unique lists of Authors
-	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, default_value=authorList[0])
+	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), default_value=authorList[0])
 	authorBtn=sg.Button(button_text="Apply", key='Author')	
 	authorObjs=[authorListCombobox, authorBtn]
 	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", layout=[authorObjs]) 
 	
 	#Setup Rating Filter
-	ratingList=["All", "5 Star", "4 Star", "3 Star", "2 Star", "1 Star"]
-	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, default_value="All")
+	ratingFilter=getRatingFilter()
+	
+	ratingList=["All", "1 Star", "2 Star", "3 Star", "4 Star", "5 Star"]
+	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(10,1), default_value=ratingList[ratingFilter])
 	ratingBtn=sg.Button(button_text="Apply", key='Rating')		
 	ratingObjs=[ratingListCombobox, ratingBtn]
 	filterFrameRating=sg.Frame(title="Minimum Star Rating", title_location="n", element_justification="center", relief="groove", layout=[ratingObjs]) 
 	
 	filterFrameObjs=[filterFrameAuthor, filterFrameRating]
-	filterFrame=sg.Frame(title="Exclude Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
+	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
 
 	# Layout of GUI
 	layout = [ [settingFrame, filterFrame],
@@ -618,6 +637,10 @@ def displayGUI():
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
 	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,600) )
+
+
+	from pprint import pprint
+	#pprint(vars(table))
 
 	
 	# ------ Event Loop ------
@@ -632,15 +655,45 @@ def displayGUI():
 			saveSettings()
 		elif event == "Default":
 			createDefaultSettings()		
-		pass
+		elif event == "Rating":
+			rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Ratings_Filter')
+			try:
+				rf[0].text=str(ratingList.index(ratingListCombobox.Get()))
+			except:
+				# TODO: This should probably be more specific than just reseting all to default
+				createDefaultSettings()
+				
+			tableData=populatTable()
+			table.Update(values=tableData)
+	
 
 	window.close()
+
+def populatTable():
+	ratingFilter=getRatingFilter()
+	
+	l=len(maps["MAP NAME"])
+	#Setup the map list table
+	rows, cols = (l, 6) 
+	tableData = [[""]*cols]*rows 
+
+	for i in range(0,l):
+		status=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i])
+		if status != "":
+			status="IGNORE:" + status
+		elif int(maps["RATING"][i]) < ratingFilter:
+			status="IGNORE:RATING"
+		else:
+			status=needMap(maps["ID"][i], maps["INFO HASH"][i])
+		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
+
+	return tableData
 				   				
 ###############################################################################
 # Obtain the custom map list from Google Doc and install missing maps
 ###############################################################################
 if __name__ == "__main__":
-	args = parser.parse_args()
+
 	
 	if args.scheduleDaily is not None:
 		#createTask(args.scheduleDaily)
@@ -652,17 +705,6 @@ if __name__ == "__main__":
 	if os.path.isdir(onwardPath) is False:
 		reportMessage("***ERROR*** Can't find ONWARD folder in '%s'" % onwardPath)
 		exit()
-		
-	
-	# Set the rating filter. If nothing is specififed use value in XML settings. If that doesn't exist default 0 / All maps
-	if args.rating is not None and args.rating > 0:
-		ratingFilter=args.rating
-	else:
-		rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Ratings_Filter')
-		try: 
-			ratingFilter=int(rf[0].text)
-		except:
-			ratingFilter=0
 
 	
 	# Download the custom maps list from Google Drive
