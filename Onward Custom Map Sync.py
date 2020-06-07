@@ -38,6 +38,8 @@ if "APPDATA" not in os.environ:
 onwardPath = os.environ["APPDATA"] + "\..\LocalLow\Downpour Interactive\Onward\\"
 mapFolder = "CustomContent\\"
 
+# Pointer to the GUI window
+windowGlobal = None
 
 		
 ###############################################################################
@@ -47,7 +49,6 @@ parser = argparse.ArgumentParser(description='Onward Custom Map Downloader versi
 parser.add_argument('-rating', type=int,
 					help='Rating Filter: Only install maps that have this star rating or better')
 parser.add_argument("-noGUI", help="Disable the GUI and run in console mode")        
-parser.add_argument("-quiet", help="Disable all output and log to a text file instead")
 parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format") 
 
 args = parser.parse_args()
@@ -252,7 +253,7 @@ def reportMessage(message):
 # Adapted from gdown library
 # https://github.com/wkentaro/gdown
 ###############################################################################				
-def downloadGoogleDriveFile(localFileName, url, quiet=True):
+def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBarsGUI=None):
 	CHUNK_SIZE = 512 * 1024  # 512KB
 	url_origin = url
 	s = requests.session()
@@ -301,11 +302,7 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 	if not quiet:
 		print("Downloading...", file=sys.stderr)
 		print("From:", url_origin, file=sys.stderr)
-		print(
-			"To:",
-			localFileName,
-			file=sys.stderr,
-		)
+		print("To:", localFileName, file=sys.stderr)
 	
 	f = open(localFileName, "wb")
 	try:
@@ -313,12 +310,23 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 		if total is not None:
 			total = int(total)
 		if not quiet:
-			pbar = tqdm.tqdm(total=total, unit="B", unit_scale=True)
+			#Google Drive doesn't seem to properly report the file size during download so we just store it for each zip file
+			#pbar = tqdm.tqdm(total=total, unit="B", unit_scale=True)
+			numberOfBytes = int(fileSize) * 1024**2 # Convert MB to bytes for status bar
+			pbar = tqdm.tqdm(total=numberOfBytes, unit="B", unit_scale=True)
+			
+		# Handle GUI Progress Bars
+		if progressBarsGUI is not None:
+			pass			
 		#t_start = time.time()
 		for chunk in res.iter_content(chunk_size=CHUNK_SIZE):
 			f.write(chunk)
-			if not quiet:
+			if not quiet:				
 				pbar.update(len(chunk))
+				
+			# Handle GUI Progress Bars				
+			if progressBarsGUI is not None:
+				pass
 		""" Disabled throttling for now				
 			if speed is not None:
 				elapsed_time_expected = 1.0 * pbar.n / speed
@@ -328,8 +336,9 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 		"""
 		if not quiet:
 			pbar.close()
-
-	
+		# Handle GUI Progress Bars
+		if progressBarsGUI is not None:
+			pass	
 
 	except IOError as e:
 		print(e, file=sys.stderr)
@@ -425,13 +434,13 @@ def needMap(mapID, mapHash):
 ###############################################################################
 # Download a mapID.zip file and verify the MD5 sum matches
 ###############################################################################	
-def getMap(mapID, mapDownloadURL, zipHash, quiet=True):
+def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=True, progressBarsGUI=None):
 	
 	# Download the Google Drive file
 	downloadName=onwardPath + mapID + ".zip"
 	
 	if "DRIVE.GOOGLE.COM" in mapDownloadURL.upper():
-		if downloadGoogleDriveFile(downloadName, mapDownloadURL, quiet) == False:
+		if downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI) == False:
 			return False
 	elif "KOIZ" in mapDownloadURL.upper():
 		reportMessage("***INFO*** Koiz doesn't want his maps hosted here... Please ask him to reconsider")
@@ -512,7 +521,12 @@ def getRatingFilter():
 ###############################################################################
 # Start Downloading Maps
 ###############################################################################
-def startDownload():
+def startDownload(progressBarsGUI=None):
+	# If the user is in GUI mode disable the window from accepting input while 
+	#	downloading and create the progress bars window
+	if progressBarsGUI is not None:
+		pass
+		
 	ratingFilter=getRatingFilter()
 			
 	l=len(maps["MAP NAME"])
@@ -544,7 +558,7 @@ def startDownload():
 		# Verify the map isn't already installed
 		if needMap(maps["ID"][i], maps["INFO HASH"][i]) != "INSTALLED":
 			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
-			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], quiet=False) is True:
+			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=False) is True:
 				totalMapsInstalled = totalMapsInstalled + 1
 				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
 			else:
@@ -555,48 +569,28 @@ def startDownload():
 			reportMessage("***SKIPPING MAP***    \"%s\" by %s\tID: %s \tAlready installed." %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i]))
 
 	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsExcluded, totalMapsFailed, l))
-	os.system("pause")
+
+	if progressBarsGUI is None:
+		os.system("pause")
+
 
 
 ###############################################################################
 # Setup the GUI
 ###############################################################################
-def displayGUI():	
-	totalMapsInstalled=0
-	totalMapsAlreadyInstalled=0	
-	totalMapsSkippedRating=0
-	totalMapsExcluded=0
-	totalMapsFailed=0
-
-	tableData=populatTable()
-	"""
-	l=len(maps["MAP NAME"])	
-	#Setup the map list table
-	rows, cols = (l, 6) 
-	tableData = [[""]*cols]*rows 
-	# ------ Make the Table Data ------
-	headings=["Map Name", "Author", "Stars", "Published", "Updated", "Status"]
-	
-	for i in range(0,l):
-		status=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i])
-		if status != "":
-			status="IGNORE:" + status
-		elif int(maps["RATING"][i]) < ratingFilter:
-			status="IGNORE:RATING"
-		else:
-			status=needMap(maps["ID"][i], maps["INFO HASH"][i])
-		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
-	"""
-
+def displayGUI():
+	summaryData = {}
 
 	# Create table object
-	headings=["Map Name", "Author", "Stars", "Published", "Updated", "Status"]	
+	rows, cols = (l, 6) 
+	tableData = [[""]*cols]*rows 	
+	headings=["Map Name", "Author", "Stars", "Published", "Updated", "Status"]
 	table=sg.Table(values=tableData[1:][:], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
 					col_widths=[25,20,8,12,12,20],
 					justification='center',
-					num_rows=20,
+					num_rows=17,
 					key='-TABLE-',
 					vertical_scroll_only=False,
 					font='Courier 10',
@@ -607,7 +601,7 @@ def displayGUI():
 	# ------ Window Layout ------
 	settingsObjs=[sg.Button(button_text="Load", size=(8,1), font='Courier 8', key='Load'), sg.Button(button_text="Save", size=(8,1), font='Courier 8', key='Save'), sg.Button(button_text="Default", size=(8,1), font='Courier 8',key='Default')]
 	taskSchedObjs=[sg.Button(button_text="Schedule", size=(8,1), font='Courier 8', key='Schedule')]
-	settingFrame=sg.Frame(title="Settings", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs, taskSchedObjs]) 
+	settingFrame=sg.Frame(title="Map Filters", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs, taskSchedObjs]) 
 
 	# Setup Author Filte
 	authorList=list(set( maps["AUTHOR"])) # Get unique lists of Authors
@@ -628,25 +622,37 @@ def displayGUI():
 	filterFrameObjs=[filterFrameAuthor, filterFrameRating]
 	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
 
+	summaryLine=sg.Text("",size=(80,2))
+	
+	startDownlaodBtn=sg.Button(button_text="Download", key='Download')
+	
+	fileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressFile')
+	allFileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressAllFiles')
+	progressBars=sg.Frame(title="Download Progress", title_location="n", element_justification="center", relief="groove", layout=[[fileProgressBar,allFileProgressBar]])
 	# Layout of GUI
-	layout = [ [settingFrame, filterFrame],
-			[table]
-		]
-
+	layout = [ [settingFrame, filterFrame], [table], [summaryLine], [startDownlaodBtn], [progressBars] ]
 
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
 	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,600) )
 
+	# Finalize the layout and then update populate the table / status lines otherwise won't update until user does something to trigger the event loop
+	window.Finalize()	
+	updateMapData(table,summaryLine)
+	
+	global windowGlobal
+	windowGlobal=window
 
+
+	
 	from pprint import pprint
 	#pprint(vars(table))
 
-	
+		
 	# ------ Event Loop ------
 	while True:
 		event, values = window.read()
-		print(event, values)	
+		#print(event, values)	
 		if event == sg.WIN_CLOSED:
 			break		
 		elif event == "Load":
@@ -662,32 +668,49 @@ def displayGUI():
 			except:
 				# TODO: This should probably be more specific than just reseting all to default
 				createDefaultSettings()
-				
-			tableData=populatTable()
-			table.Update(values=tableData)
-	
+		elif event == "Download":
+			print("here")
+			startDownload()
+		
+			updateMapData(table, summaryLine)
 
 	window.close()
 
-def populatTable():
+def updateMapData(table, summaryLine):
 	ratingFilter=getRatingFilter()
+	summaryData={"totalMapsToInstalled":0, "totalMapsAlreadyInstalled":0, "totalMapsSkippedRating":0, "totalMapsExcluded":0, "totalMapsFailed":0, "totalMaps":0 }
 	
 	l=len(maps["MAP NAME"])
 	#Setup the map list table
 	rows, cols = (l, 6) 
 	tableData = [[""]*cols]*rows 
-
+	
+	summaryData["totalMaps"]=l
+	
 	for i in range(0,l):
 		status=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i])
 		if status != "":
 			status="IGNORE:" + status
+			summaryData["totalMapsExcluded"]=summaryData["totalMapsExcluded"]+1
 		elif int(maps["RATING"][i]) < ratingFilter:
 			status="IGNORE:RATING"
+			summaryData["totalMapsSkippedRating"]=summaryData["totalMapsSkippedRating"]+1
 		else:
 			status=needMap(maps["ID"][i], maps["INFO HASH"][i])
+			if status == "INSTALLED":
+				summaryData["totalMapsAlreadyInstalled"]=summaryData["totalMapsAlreadyInstalled"]+1
+			else:
+				summaryData["totalMapsToInstalled"]=summaryData["totalMapsToInstalled"]+1			
 		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
+		
 
-	return tableData
+	summaryText="Total Maps: %d\tTotal To Download:%d\tAlready Installed:%d\nTotal Filtered:%d\tBy Rating:%d\tManually Exlcuded:%d" \
+		% (	summaryData["totalMaps"], summaryData["totalMapsAlreadyInstalled"], summaryData["totalMapsToInstalled"], \
+			summaryData["totalMapsExcluded"]+summaryData["totalMapsSkippedRating"], summaryData["totalMapsSkippedRating"], summaryData["totalMapsExcluded"] )
+	
+	table.Update(values=tableData)
+	summaryLine.Update(value=summaryText)
+	return 
 				   				
 ###############################################################################
 # Obtain the custom map list from Google Doc and install missing maps
@@ -710,7 +733,7 @@ if __name__ == "__main__":
 	# Download the custom maps list from Google Drive
 	reportMessage("***INFO*** Obtaining the complete custom maps list from server.")	
 	try:
-		downloadGoogleDriveFile(filenameMapList, mapListGoogleURL, quiet=True)
+		downloadGoogleDriveFile(filenameMapList, mapListGoogleURL, 0, quiet=True)
 	except AssertionError as error:
 		reportMessage("\n***ERROR*** Unable to obtain the list of custom maps... Please try again later.\n")	
 		exit()
@@ -729,7 +752,7 @@ if __name__ == "__main__":
 		
 	# Make sure the map list we download contains valid data	
 	# TODO: Make this more inteligent.... Maybe just go 1 by 1 and verify each key matches
-	validKeys = {"MAP NAME":1, "AUTHOR":2, "ID":3, "INFO HASH":4, "RELEASE DATE":5, "UPDATE DATE":6, "RATING":7, "DOWNLOAD URL":8, "ZIP HASH":9, "MISC FIELDS":10}	
+	validKeys = {"MAP NAME":1, "AUTHOR":2, "ID":3, "INFO HASH":4, "RELEASE DATE":5, "UPDATE DATE":6, "RATING":7, "FILE SIZE":8, "DOWNLOAD URL":9, "ZIP HASH":10, "MISC FIELDS":11}	
 	if maps.keys() < validKeys.keys(): 
 		print (maps.keys())
 		reportMessage("\n***ERROR*** Map List Strucure does not match expected format... Check for an update to this app\n")	
@@ -758,8 +781,8 @@ if __name__ == "__main__":
 		startDownload()
 	else:
 		displayGUI()
-			
-			
+
+	
 	# Delete the custom map metadata
 	delMapList = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Delete_Map_List_On_Exit')
 	try:
