@@ -250,9 +250,10 @@ def reportMessage(message):
 	global globalWindow	
 	if globalWindow is not None:
 		color="black"
-		if message.find("ERROR") != -1:
-			color="red"
-		globalWindow["installLog"].update(message, text_color_for_value=color, append=True)
+		#if message.find("ERROR") != -1:
+		#	color="red"
+		print(message)
+		globalWindow["installLog"].update(message + "\n", text_color_for_value=color, append=True)
 	else:
 		print(message)
 	
@@ -565,7 +566,7 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 	allProgressText=sg.Text('Total Progress: Map 1 of %d' % totalMapsToDownload, key='allProgressText')
 	allProgress=sg.ProgressBar(l, orientation='h', size=(54, 20), key='allProgress')
 
-	installLog=sg.MLine(default_text='', size=(80, 10), autoscroll=True, font="monospace 8", key='installLog')
+	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font="monospace 7", key='installLog')
 	installLogObjs=[[installLog]]
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
@@ -641,7 +642,7 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 		os.system("pause")
 	else:
 		globalWindow=oldglobalWindow	
-		globalWindow["installLog"].update(installLog.get(), append=False)	# Move the install log to the main window
+		#globalWindow["installLog"].update(installLog.get(), append=False)	# Move the install log to the main window
 		window.close()
 
 
@@ -704,7 +705,7 @@ def displayGUI():
 	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
 
 	summaryLine=sg.Text("",size=(80,2), key='summaryLine')	
-	installLog=sg.MLine(default_text='Hi\nMom\nWhat', size=(80, 5), key='installLog')
+	installLog=sg.MLine(default_text='', size=(120, 10), font='monospace 8', key='installLog')
 	installLogObjs=[[installLog], [summaryLine]]
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
@@ -757,7 +758,7 @@ def displayGUI():
 				processXMLFilter("REMOVE", "Exlude_Map_Author", author)				
 		elif event == "Download":
 			window.Disappear()
-			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalToInstalled"])
+			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalToInstall"])
 			#updateMapData(window, summaryData)
 			window.Reappear()
 
@@ -770,9 +771,10 @@ def displayGUI():
 def updateMapData(window, summaryData):
 	table=window['mapsTable']
 	summaryLine=window['summaryLine']
-
+	installLog=window['installLog']
+	
 	summaryData.clear()
-	summaryData.update({	"totalToInstalled":0, 	"totalAlreadyInstalled":0, 								\
+	summaryData.update({	"totalToInstall":0, 	"totalAlreadyInstalled":0, 								\
 							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0,		\
 							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
 	
@@ -792,7 +794,7 @@ def updateMapData(window, summaryData):
 			summaryData["totalAlreadyInstalled"]=summaryData["totalAlreadyInstalled"]+1
 			status=needStatus
 		elif needStatus in ["REINSTALL", "DOWNLOAD"] and filterStatus == "":
-			summaryData["totalToInstalled"]=summaryData["totalToInstalled"]+1	
+			summaryData["totalToInstall"]=summaryData["totalToInstall"]+1	
 			status=needStatus
 		else:
 			status=filterStatus
@@ -808,7 +810,7 @@ def updateMapData(window, summaryData):
 		
 
 	summaryText="Total To Download:%d\tAlready Installed:%d\tTotal Maps: %d\nBy Rating:%d\tBy Author:%d\tBy Name:%d\tTotal Exlcuded:%d" \
-		% (	summaryData["totalToInstalled"], summaryData["totalAlreadyInstalled"], summaryData["totalMaps"],  \
+		% (	summaryData["totalToInstall"], summaryData["totalAlreadyInstalled"], summaryData["totalMaps"],  \
 			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"] ,summaryData["totalExcluded"] )
 	
 	table.Update(values=tableData)
