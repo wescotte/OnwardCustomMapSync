@@ -188,7 +188,7 @@ if __name__ == "__main__":
 
 
 	print("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsFailed, l))
-
+	os.system("pause")
 
 
 
