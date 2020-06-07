@@ -29,19 +29,6 @@ parser = argparse.ArgumentParser(description='Onward Custom Map Downloader versi
 parser.add_argument('-rating', type=int,
                     help='Rating Filter: Only install maps that have this star rating or better')
                     
-# TODO
-# Make sure Onward directory exists
-desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
-# Prints: C:\Users\sdkca\Desktop
-print("The Desktop path is: " + desktop)
-#print(os.environ)
-
-for keys,values in os.environ.items():
-    print(keys)
-    print(values)
-    
-#exit()
-
 
 ###############################################################################
 # Verify if we already have the map installed
@@ -116,6 +103,12 @@ def getHash(filename):
 # Obtain the custom map list from Google Doc and install missing maps
 ###############################################################################
 if __name__ == "__main__":
+    # Make sure the Onward folder exists
+	if os.path.isdir(onwardPath) is False:
+		print("***ERROR*** Can't find ONWARD folder in '%s'" % onwardPath)
+		exit()
+        
+    
 	args = parser.parse_args()
 	
 	# Set the rating filter. If nothing is specififed install all maps
@@ -194,7 +187,7 @@ if __name__ == "__main__":
 	print(filenameMapList)
 
 
-	print("\n\n***INFO*** Maps Installed: %s\t\tAlready Installed: %s\t\tSkipped-Low Rating: %s\t\tInstall Failed: %s\t\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsFailed, l))
+	print("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsFailed, l))
 
 
 
