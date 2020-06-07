@@ -6,10 +6,7 @@ import argparse
 
 from pathlib import Path
 
-parser = argparse.ArgumentParser(description='Onward Custom Map Downloader')
-# Optional argument
-parser.add_argument('-rating', type=int,
-                    help='Rating Filter: Only install maps that have this star rating or better')
+
                     
 
 
@@ -18,12 +15,19 @@ parser.add_argument('-rating', type=int,
 #print("The Desktop path is: " + desktop)
 #print(os.environ)
 
+appVersion = "1.0"
 filenameMapList = 'mapList.csv'
 mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
 
 onwardPath = "appdata/"
 mapFolder = "CustomContent/"
 
+
+parser = argparse.ArgumentParser(description='Onward Custom Map Downloader version %s' %(appVersion))
+# Optional argument
+parser.add_argument('-rating', type=int,
+                    help='Rating Filter: Only install maps that have this star rating or better')
+                    
 # TODO
 # Make sure Onward directory exists
 # Make a CustomContent folder if it doesn't exist
@@ -97,32 +101,54 @@ if __name__ == "__main__":
 
 		
 	# Download the custom maps list from Google Drive
-	print("Downloading the custom maps metadata...")
-	#gdown.download(mapListGoogleURL, filenameMapList, quiet=False)
+	print("Obtaining the custom maps list...")	
+	try:
+		gdown.download(mapListGoogleURL, filenameMapList, quiet=True)
+	except AssertionError as error:
+		print("ERROR: Unable to obtain the list of custom maps... Please try again later.")	
+		exit()
+
 
 
 	# Read the maps list from the file as a Dictionary
 	reader = csv.DictReader(open(filenameMapList))
 
-	mapList = {}
+	maps = {}
 	for row in reader:
 		for column, value in row.items():
-			mapList.setdefault(column, []).append(value)
+			maps.setdefault(column, []).append(value)
 		
-	# Traverse the map list	
-	l=len(mapList["Map Name"])
+	print (maps.keys())
+	# Make sure the map list we download contains valid data	
+	validKeys = {"Map Name":1, "ID":2, "Info Hash":3, "Release Date":4, "Update Date":5, "Rating":6, "Download URL":7, "Zip Hash":8}	
+	if maps.keys() != validKeys.keys(): 
+		print("ERROR: Unable to obtain the list of custom maps... Please try again later.")	
+		exit()
+	
+	l=len(maps["Map Name"])
+	if l is None or l < 1:	
+		print("ERROR: Map list downloaded but is empty... Try again later.")	
+		exit()			
+
+	# Traverse the list of maps		
 	for i in range(0,l):
-		if mapList["Rating"][i].isnumeric() is False:
-			mapList["Rating"][i]="0";
+		# If no rating is defined set it to 0 so the filter works properly.
+		if maps["Rating"][i].isnumeric() is False:
+			maps["Rating"][i]="0";
 		
-		if int(mapList["Rating"][i]) >= ratingFilter:
-			if needMap(mapList["ID"][i], mapList["Info Hash"][i]):
-				print("****Downloading map \"%s\" ID:%s Rating:%s" %(mapList["Map Name"][i], mapList["ID"][i],mapList["Rating"][i]))
-				downloadMap(mapList["ID"][i], mapList["Download URL"][i], mapList["Zip Hash"][i])
+		# Don't download maps that have a lower star rating that the user specified
+		if int(maps["Rating"][i]) >= ratingFilter:
+			if needMap(maps["ID"][i], maps["Info Hash"][i]):
+				print("\n****Downloading map \"%s\" ID:%s Rating:%s" %(maps["Map Name"][i], maps["ID"][i],maps["Rating"][i]))
+				downloadMap(maps["ID"][i], maps["Download URL"][i], maps["Zip Hash"][i])
 			else:
-				print("Skipping map \"%s\" ID: %s as it is already installed." %(mapList["Map Name"][i], mapList["ID"][i]))
+				print("Skipping map \"%s\" ID: %s as it is already installed." %(maps["Map Name"][i], maps["ID"][i]))
 		else:
-			print("Skipping map \"%s\" ID: %s as it has a rating of %s which is below your threshold of %s" %(mapList["Map Name"][i], mapList["ID"][i],mapList["Rating"][i], ratingFilter))		
+			print("Skipping map \"%s\" ID: %s as it has a rating of %s which is below your threshold of %s" %(maps["Map Name"][i], maps["ID"][i],maps["Rating"][i], ratingFilter))	
+			
+			
+	# Delete the custom map metadata
+	os.remove(filenameMapList)	
 
 
 
