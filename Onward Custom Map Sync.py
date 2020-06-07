@@ -17,7 +17,6 @@ import os.path as osp
 # GUI libs
 import PySimpleGUI as sg
 
-
 					
 ###############################################################################
 # Global Variables
@@ -39,7 +38,8 @@ onwardPath = os.environ["APPDATA"] + "\..\LocalLow\Downpour Interactive\Onward\\
 mapFolder = "CustomContent\\"
 
 # Pointer to the GUI window
-windowGlobal = None
+global globalWindow
+globalWindow = None
 
 		
 ###############################################################################
@@ -246,7 +246,15 @@ def createTask(timeToRun):
 # Otherwise display in the status log 
 ###############################################################################	
 def reportMessage(message):
-	print(message)
+
+	global globalWindow	
+	if globalWindow is not None:
+		color="black"
+		if message.find("ERROR") != -1:
+			color="red"
+		globalWindow["installLog"].update(message, text_color_for_value=color, append=True)
+	else:
+		print(message)
 	
 ###############################################################################
 # Download a file from Google Drive
@@ -388,20 +396,36 @@ def get_url_from_gdrive_confirmation(contents):
 #	"" if map isn't filterd otherwise returns the type of filter detected
 #	as a string
 ###############################################################################
-def filterMap(mapID, mapName, mapAuthor):
-	authorFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
-	for i in range(0,len(authorFilter)):
-		if authorFilter[i].text == mapAuthor:
-			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- Filtered by Author." %(mapName, mapID, mapAuthor))
-			return "AUTHROR"
-			
+def filterMap(mapID, mapName, mapAuthor, mapRating):
+	filterMsg = ""
+
+	if mapRating == "-1":
+		filterMsg="FILTERED PER AUTHROR'S REQUEST"
+		return filterMsg
+		
 	IDFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_ID')
-	for i in range(0,len(IDFilter)):
-		if IDFilter[i].text == mapID:
+	for f in IDFilter:
+		if f.text == mapID:
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- This map is marked not to install." %(mapName, mapID, mapAuthor))
-			return "MAP NAME"
-	
-	return ""
+			filterMsg = "FILTERED BY: MAP NAME"
+			
+	authorFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
+	for f in authorFilter:
+		if f.text == mapAuthor:
+			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- Filtered by Author." %(mapName, mapID, mapAuthor))
+		if len(filterMsg) > 0:
+			filterMsg = filterMsg + " & AUTHOR"
+		else:
+			filterMsg = "FILTERED BY: AUTHOR"
+
+	ratingFilter=getRatingFilter()
+	if int(mapRating) < ratingFilter:
+		if len(filterMsg) > 0:
+			filterMsg = filterMsg + " & RATING"
+		else:
+			filterMsg = "FILTERED BY: RATING"
+			
+	return filterMsg
 	
 
 ###############################################################################
@@ -527,15 +551,23 @@ def getRatingFilter():
 # Start Downloading Maps
 ###############################################################################
 def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
+	global globalWindow
+	oldglobalWindow=globalWindow
+
 	l=len(maps["MAP NAME"])
 	
 	# If the user is in GUI mode disable the window from accepting input while 
 	#	downloading and create the progress bars window
 	window=None
+
 	mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='mapProgressText')
-	mapProgress=sg.ProgressBar(1, orientation='h', size=(40, 20), key='mapProgress')
+	mapProgress=sg.ProgressBar(1, orientation='h', size=(54, 20), key='mapProgress')
 	allProgressText=sg.Text('Total Progress: Map 1 of %d' % totalMapsToDownload, key='allProgressText')
-	allProgress=sg.ProgressBar(l, orientation='h', size=(40, 20), key='allProgress')
+	allProgress=sg.ProgressBar(l, orientation='h', size=(54, 20), key='allProgress')
+
+	installLog=sg.MLine(default_text='', size=(80, 10), autoscroll=True, font="monospace 8", key='installLog')
+	installLogObjs=[[installLog]]
+	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
 	if progressBarsGUI is not False:
 		if totalMapsToDownload == 0:
@@ -543,11 +575,14 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 			return
 			
 		# layout the form
-		layout = 	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[sg.Cancel()]]
+		layout = 	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[installLogFrame],[sg.Cancel()]]
 
 		# create the form
 		window = sg.Window('Download Progress', layout)
-
+		
+		globalWindow=window
+		
+		
 	ratingFilter=getRatingFilter()
 			
 	totalMapsInstalled=0
@@ -559,7 +594,6 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 	# Traverse the list of maps		
 	#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
 	for i in range(0,l):
-		print(i)
 		# Update the progress bar
 		if progressBarsGUI is not False:
 			# check to see if the cancel button was clicked and exit loop if clicked
@@ -572,7 +606,6 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 			allProgress.update_bar(totalMapsInstalled, totalMapsToDownload)	
 			#window.Refresh()			
 			
-
 			
 		# If no rating is defined set it to 0 so the filter works properly.
 		if maps["RATING"][i].isnumeric() is False:
@@ -585,7 +618,7 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 			continue	
 
 		# Check for custom filters - Specific Map or Specific Author
-		if filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i]) != "":
+		if filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i]) != "":
 			totalMapsExcluded = totalMapsExcluded + 1
 			continue				
 			
@@ -604,11 +637,13 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 			
 	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsExcluded, totalMapsFailed, l))
 
-	print("broke?")
 	if progressBarsGUI is False:
 		os.system("pause")
 	else:
+		globalWindow=oldglobalWindow	
+		globalWindow["installLog"].update(installLog.get(), append=False)	# Move the install log to the main window
 		window.close()
+
 
 
 
@@ -618,31 +653,41 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 def displayGUI():
 	summaryData = {}
 
+
+	###########################################################################
+	# GUI Objects
+	###########################################################################	
 	# Create table object
 	rows, cols = (l, 6) 
 	tableData = [[""]*cols]*rows 	
-	headings=["Map Name", "Author", "Size", "Rating", "Published", "Updated", "Status"]
+	headings=["Map Name", "Author", "Status", "Size", "Rating", "Published", "Updated"]
 	table=sg.Table(values=tableData[1:][:], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
-					col_widths=[25,20,8,8,12,12,23],
+					col_widths=[30,25,45, 13,13,13,13],
 					justification='center',
-					num_rows=27,
+					num_rows=20,
 					key='mapsTable',
 					vertical_scroll_only=False,
-					font='Courier 8',
-					header_font='Courier 11')
+					font='Courier 7',
+					header_font='Courier 9')
 
 	
 	# ------ Window Layout ------
-	settingsObjs=[sg.Button(button_text="Load", size=(8,1), font='Courier 8', key='Load'), sg.Button(button_text="Save", size=(8,1), font='Courier 8', key='Save'), sg.Button(button_text="Default", size=(8,1), font='Courier 8',key='Default')]
-	taskSchedObjs=[sg.Button(button_text="Schedule", size=(8,1), font='Courier 8', key='Schedule')]
-	settingFrame=sg.Frame(title="Map Filters", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs, taskSchedObjs]) 
+	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key='Load'), 		\
+							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key='Save'), 		\
+							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key='Default')	\
+					]
+	settingFrame=sg.Frame(title="Map Filters", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs]) 
 
 	# Setup Author Filte
 	authorList=list(set( maps["AUTHOR"])) # Get unique lists of Authors
-	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), default_value=authorList[0])
-	authorBtn=sg.Button(button_text="Apply", key='Author')	
+	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), change_submits=True, default_value=authorList[0], key="AuthorSelected")
+	# Since we need to keep the FILTER/CLEAR in sync we need to check if the default authtor is currently being filtered or not
+	btnText="FILTER"
+	if processXMLFilter("EXISTS", "Exlude_Map_Author", authorList[0]):
+		btnText="CLEAR"
+	authorBtn=sg.Button(button_text=btnText, size=(7,1), key='Author')	
 	authorObjs=[authorListCombobox, authorBtn]
 	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", layout=[authorObjs]) 
 	
@@ -651,37 +696,39 @@ def displayGUI():
 	
 	ratingList=["All", "1 Star", "2 Star", "3 Star", "4 Star", "5 Star"]
 	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(10,1), default_value=ratingList[ratingFilter])
-	ratingBtn=sg.Button(button_text="Apply", key='Rating')		
+	ratingBtn=sg.Button(button_text="Apply", size=(7,1), key='Rating')		
 	ratingObjs=[ratingListCombobox, ratingBtn]
 	filterFrameRating=sg.Frame(title="Minimum Star Rating", title_location="n", element_justification="center", relief="groove", layout=[ratingObjs]) 
 	
-	filterFrameObjs=[filterFrameAuthor, filterFrameRating]
+	filterFrameObjs=[settingFrame, filterFrameAuthor, filterFrameRating]
 	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
 
-	summaryLine=sg.Text("",size=(80,2), key='summaryLine')
+	summaryLine=sg.Text("",size=(80,2), key='summaryLine')	
+	installLog=sg.MLine(default_text='Hi\nMom\nWhat', size=(80, 5), key='installLog')
+	installLogObjs=[[installLog], [summaryLine]]
+	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
 	startDownloadBtn=sg.Button(button_text="Download", key='Download')
+	taskSchedBtn=sg.Button(button_text="Schedule", key='Schedule')
 	
-	#fileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressFile')
-	#allFileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressAllFiles')
-	#progressBars=sg.Frame(title="Download Progress", title_location="n", element_justification="center", relief="groove", layout=[[fileProgressBar,allFileProgressBar]])
 	# Layout of GUI
-	layout = [ [settingFrame, filterFrame], [table], [summaryLine], [startDownloadBtn] ]
+	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, taskSchedBtn]	 ]
 
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
-	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,600) )
+	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,650) )
 
 	# Finalize the layout and then update populate the table / status lines otherwise won't update until user does something to trigger the event loop
 	window.Finalize()	
 	updateMapData(window, summaryData)
 	
-	global windowGlobal
-	windowGlobal=window
-
-
+	global globalWindow
+	globalWindow=window
+	###########################################################################
+	# End GUI Objects
+	###########################################################################	
 	
-	from pprint import pprint
+	#from pprint import pprint
 	#pprint(vars(table))
 
 	# ------ Event Loop ------
@@ -694,70 +741,111 @@ def displayGUI():
 		elif event == "Save":
 			saveSettings()
 		elif event == "Default":
-			createDefaultSettings()		
+			createDefaultSettings()			
 		elif event == "Rating":
 			rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Ratings_Filter')
 			try:
 				rf[0].text=str(ratingList.index(ratingListCombobox.Get()))
 			except:
 				# TODO: This should probably be more specific than just reseting all to default
-				createDefaultSettings()
-			updateMapData(window, summaryData)	
+				createDefaultSettings()	
 		elif event == "Author":
 			author=str(authorListCombobox.Get())
-			rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
-
+			if processXMLFilter("EXISTS", "Exlude_Map_Author", author) == False:
+				processXMLFilter("ADD", "Exlude_Map_Author", author)
+			else:
+				processXMLFilter("REMOVE", "Exlude_Map_Author", author)				
 		elif event == "Download":
 			window.Disappear()
-			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalMapsToInstalled"])
-
-			updateMapData(window, summaryData)
+			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalToInstalled"])
+			#updateMapData(window, summaryData)
 			window.Reappear()
-			
+
+		updateMapData(window, summaryData)
 	window.close()
 
+###############################################################################
+# Update the GUI table and summary lines
+###############################################################################			
 def updateMapData(window, summaryData):
 	table=window['mapsTable']
 	summaryLine=window['summaryLine']
 
 	summaryData.clear()
-	summaryData.update({"totalMapsToInstalled":0, "totalMapsAlreadyInstalled":0, "totalMapsSkippedRating":0, "totalMapsExcluded":0, "totalMapsFailed":0, "totalMaps":0 })
+	summaryData.update({	"totalToInstalled":0, 	"totalAlreadyInstalled":0, 								\
+							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0,		\
+							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
 	
 	ratingFilter=getRatingFilter()
 
 	l=len(maps["MAP NAME"])
 	#Setup the map list table
-	rows, cols = (l, 6) 
-	tableData = [[""]*cols]*rows 
-	
+	tableData = []
 	summaryData["totalMaps"]=l
 	
 	for i in range(0,l):
-		status=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i])
-		if status != "":
-			status="IGNORE:" + status
-			summaryData["totalMapsExcluded"]=summaryData["totalMapsExcluded"]+1
-		elif int(maps["RATING"][i]) < ratingFilter:
-			status="IGNORE:RATING"
-			summaryData["totalMapsSkippedRating"]=summaryData["totalMapsSkippedRating"]+1
+		status=""
+		
+		needStatus=needMap(maps["ID"][i], maps["INFO HASH"][i])
+		filterStatus=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
+		if needStatus == "INSTALLED":
+			summaryData["totalAlreadyInstalled"]=summaryData["totalAlreadyInstalled"]+1
+			status=needStatus
+		elif needStatus in ["REINSTALL", "DOWNLOAD"] and filterStatus == "":
+			summaryData["totalToInstalled"]=summaryData["totalToInstalled"]+1	
+			status=needStatus
 		else:
-			status=needMap(maps["ID"][i], maps["INFO HASH"][i])
-			if status == "INSTALLED":
-				summaryData["totalMapsAlreadyInstalled"]=summaryData["totalMapsAlreadyInstalled"]+1
-			else:
-				summaryData["totalMapsToInstalled"]=summaryData["totalMapsToInstalled"]+1			
-		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
+			status=filterStatus
+			if status.find("RATING") != -1:
+				summaryData["totalSkippedRating"]=summaryData["totalSkippedRating"]+1
+			elif status.find("AUTHOR") != -1:
+				summaryData["totalSkippedAuthor"]=summaryData["totalSkippedAuthor"]+1
+			elif status.find("MAP NAME") != -1:
+				summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1	
+			summaryData["totalExcluded"]=summaryData["totalExcluded"]+1	
+	
+		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], status,  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
 		
 
-	summaryText="Total To Download:%d\tAlready Installed:%d\tTotal Maps: %d\nTotal Filtered:%d\tBy Rating:%d\tManually Exlcuded:%d" \
-		% (	summaryData["totalMapsToInstalled"], summaryData["totalMapsAlreadyInstalled"], summaryData["totalMaps"],  \
-			summaryData["totalMapsExcluded"]+summaryData["totalMapsSkippedRating"], summaryData["totalMapsSkippedRating"], summaryData["totalMapsExcluded"] )
+	summaryText="Total To Download:%d\tAlready Installed:%d\tTotal Maps: %d\nBy Rating:%d\tBy Author:%d\tBy Name:%d\tTotal Exlcuded:%d" \
+		% (	summaryData["totalToInstalled"], summaryData["totalAlreadyInstalled"], summaryData["totalMaps"],  \
+			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"] ,summaryData["totalExcluded"] )
 	
 	table.Update(values=tableData)
 	summaryLine.Update(value=summaryText)
 
-	return 
-				   				
+	# Update the button text on the Author Remove to reflect the current seletion
+	author=str(window["AuthorSelected"].Get())
+	if processXMLFilter("EXISTS", "Exlude_Map_Author", author) == True:
+		window["Author"].update(text="CLEAR")	
+	else:
+		window["Author"].update(text="FILTER")		
+
+###############################################################################
+# Add/Remove or Check if a map filter exists in the XML data
+###############################################################################
+def processXMLFilter(method, tag, text=None):
+	if method=="EXISTS":
+		s='/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/%s[text()="%s"]' % (tag,text)
+		rf = XMLSettings.xpath(s)
+		if len(rf) > 0:
+			return True
+		else:
+			return False
+			
+	if method=="ADD":
+		e=etree.Element(tag)
+		e.text=str(text)
+		e.tail = '\n'	# Keeps the formatting nice in the XML file
+		rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters')
+		rf[0].insert(-1,e)	# Add at the end of list TODO: Wrap this in a try perhaps?
+		
+	if method=="REMOVE":
+		s='/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/%s[text()="%s"]' % (tag,text)
+		rf = XMLSettings.xpath(s)
+		for el in rf:
+			el.getparent().remove(el)
+			
 ###############################################################################
 # Obtain the custom map list from Google Doc and install missing maps
 ###############################################################################
