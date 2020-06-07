@@ -62,11 +62,11 @@ def downloadMap(mapID, mapDownloadURL, zipHash):
 	try:
 		gdown.cached_download(mapDownloadURL, downloadName, md5=zipHash, postprocess=gdown.extractall)
 	except AssertionError as error:
-		print("ERROR: Map ID: %s did not have the expected hash value... This map will not be installed" %(mapID))
+		return False
 		
 	# Delete the zip file after downloading/extracting.
-	os.remove(downloadName)
-
+	#os.remove(downloadName)
+	return True
 
 def getHash(filename):
    """"This function returns the SHA-1 hash
@@ -103,7 +103,7 @@ if __name__ == "__main__":
 	# Download the custom maps list from Google Drive
 	print("Obtaining the custom maps list...")	
 	try:
-		gdown.download(mapListGoogleURL, filenameMapList, quiet=True)
+		gdown.download(mapListGoogleURL, filenameMapList, quiet=False)
 	except AssertionError as error:
 		print("ERROR: Unable to obtain the list of custom maps... Please try again later.")	
 		exit()
@@ -116,41 +116,53 @@ if __name__ == "__main__":
 	maps = {}
 	for row in reader:
 		for column, value in row.items():
-			maps.setdefault(column, []).append(value)
+			maps.setdefault(column.upper(), []).append(value)
 		
 	print (maps.keys())
 	# Make sure the map list we download contains valid data	
-	validKeys = {"Map Name":1, "ID":2, "Info Hash":3, "Release Date":4, "Update Date":5, "Rating":6, "Download URL":7, "Zip Hash":8}	
+	validKeys = {"MAP NAME":1, "ID":2, "INFO HASH":3, "RELEASE DATE":4, "UPDATE DATE":5, "RATING":6, "DOWNLOAD URL":7, "ZIP HASH":8}	
 	if maps.keys() != validKeys.keys(): 
 		print("ERROR: Unable to obtain the list of custom maps... Please try again later.")	
+		print("here")
+		
 		exit()
 	
-	l=len(maps["Map Name"])
+	l=len(maps["MAP NAME"])
 	if l is None or l < 1:	
 		print("ERROR: Map list downloaded but is empty... Try again later.")	
 		exit()			
 
+	totalMapsInstalled=0
+	totalMapsSkipped=0
+	totalMapsFailed=0
+	
 	# Traverse the list of maps		
 	for i in range(0,l):
 		# If no rating is defined set it to 0 so the filter works properly.
-		if maps["Rating"][i].isnumeric() is False:
-			maps["Rating"][i]="0";
+		if maps["RATING"][i].isnumeric() is False:
+			maps["RATING"][i]="0";
 		
 		# Don't download maps that have a lower star rating that the user specified
-		if int(maps["Rating"][i]) >= ratingFilter:
-			if needMap(maps["ID"][i], maps["Info Hash"][i]):
-				print("\n****Downloading map \"%s\" ID:%s Rating:%s" %(maps["Map Name"][i], maps["ID"][i],maps["Rating"][i]))
-				downloadMap(maps["ID"][i], maps["Download URL"][i], maps["Zip Hash"][i])
+		if int(maps["RATING"][i]) >= ratingFilter:
+			if needMap(maps["ID"][i], maps["INFO HASH"][i]):
+				print("\n****Downloading map \"%s\"\t\tID:%s\t\tRating:%s" %(maps["MAP NAME"][i], maps["ID"][i],maps["RATING"][i]))
+				if downloadMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i]) is True:
+					totalMapsInstalled = totalMapsInstalled + 1
+				else:
+					totalMapsFailed = totalMapsFailed + 1
+					print("\r\r***ERROR: Map \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"], maps["ID"]))	
 			else:
-				print("Skipping map \"%s\" ID: %s as it is already installed." %(maps["Map Name"][i], maps["ID"][i]))
+				totalMapsSkipped = totalMapsSkipped + 1
+				print("Skipping map \"%s\" ID: %s ---- already installed." %(maps["MAP NAME"][i], maps["ID"][i]))
 		else:
-			print("Skipping map \"%s\" ID: %s as it has a rating of %s which is below your threshold of %s" %(maps["Map Name"][i], maps["ID"][i],maps["Rating"][i], ratingFilter))	
+			totalMapsSkipped = totalMapsSkipped + 1
+			print("Skipping map \"%s\" ID: %s ---- Map Rating %s below threshold %s" %(maps["MAP NAME"][i], maps["ID"][i],maps["RATING"][i], ratingFilter))	
 			
 			
 	# Delete the custom map metadata
 	os.remove(filenameMapList)	
 
-
+	print("\n\nMaps Installed: %s\tMaps Skipped: %s\tTotal Maps Failed To Install:%s\tTotal Maps:%s" % (totalMapsInstalled, totalMapsSkipped, totalMapsFailed, l))
 
 
 
