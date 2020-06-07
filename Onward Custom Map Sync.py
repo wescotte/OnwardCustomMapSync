@@ -13,12 +13,16 @@ from pathlib import Path
 ###############################################################################
 
 
-appVersion = "1.0"
+appVersion = "0.99"
 filenameMapList = 'mapList.csv'
 mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
 
-onwardPath = "appdata/"
-mapFolder = "CustomContent/"
+if "HOMEPATH" not in os.environ:
+    print("***ERROR*** HOMEPATH environmental variable not set. Don't know how to find Onward folder")
+    exit()
+    
+onwardPath = os.environ["HOMEPATH"] + "\AppData\LocalLow\Downpour Interactive\Onward\\"
+mapFolder = "CustomContent\\"
 
 # Setup Arguments
 parser = argparse.ArgumentParser(description='Onward Custom Map Downloader version %s' %(appVersion))
@@ -27,11 +31,16 @@ parser.add_argument('-rating', type=int,
                     
 # TODO
 # Make sure Onward directory exists
-#desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
 # Prints: C:\Users\sdkca\Desktop
-#print("The Desktop path is: " + desktop)
+print("The Desktop path is: " + desktop)
 #print(os.environ)
 
+for keys,values in os.environ.items():
+    print(keys)
+    print(values)
+    
+#exit()
 
 
 ###############################################################################
@@ -74,7 +83,7 @@ def downloadMap(mapID, mapDownloadURL, zipHash):
 		return False
 		
 	# Delete the zip file after downloading/extracting.
-	#os.remove(downloadName)
+	os.remove(downloadName)
 	return True
 
 
@@ -124,15 +133,17 @@ if __name__ == "__main__":
 		print("\n***ERROR*** Unable to obtain the list of custom maps... Please try again later.\n")	
 		exit()
 
-	print("***INFO*** List downloaded sucessfully...")
+	print("***INFO*** List downloaded sucessfully...\n\n")
 
-	# Read the maps list from the file as a Dictionary
-	reader = csv.DictReader(open(filenameMapList))
 
+	# Read the maps list from the file into a Dictionary
+	f = open(filenameMapList)
+	reader = csv.DictReader(f)
 	maps = {}
 	for row in reader:
 		for column, value in row.items():
 			maps.setdefault(column.upper(), []).append(value)
+	f.close()
 		
 	# Make sure the map list we download contains valid data	
 	validKeys = {"MAP NAME":1, "ID":2, "INFO HASH":3, "RELEASE DATE":4, "UPDATE DATE":5, "RATING":6, "DOWNLOAD URL":7, "ZIP HASH":8}	
@@ -144,6 +155,8 @@ if __name__ == "__main__":
 	if l is None or l < 1:	
 		print("\n***ERROR*** Map list downloaded but is empty... Try again later.\n")	
 		exit()			
+		
+		
 
 	totalMapsInstalled=0
 	totalMapsAlreadyInstalled=0	
@@ -152,6 +165,7 @@ if __name__ == "__main__":
 	
 	# Traverse the list of maps		
 	for i in range(0,l):
+	
 		# If no rating is defined set it to 0 so the filter works properly.
 		if maps["RATING"][i].isnumeric() is False:
 			maps["RATING"][i]="0";
@@ -159,6 +173,7 @@ if __name__ == "__main__":
 		# Don't download maps that have a lower star rating that the user specified
 		if int(maps["RATING"][i]) >= ratingFilter:
 			if needMap(maps["ID"][i], maps["INFO HASH"][i]):
+			
 				print("***DOWNLOADING MAP*** \"%s\"\t\tID:%s\t\tRating:%s" %(maps["MAP NAME"][i], maps["ID"][i],maps["RATING"][i]))
 				if downloadMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i]) is True:
 					totalMapsInstalled = totalMapsInstalled + 1
@@ -176,6 +191,8 @@ if __name__ == "__main__":
 			
 	# Delete the custom map metadata
 	os.remove(filenameMapList)	
+	print(filenameMapList)
+
 
 	print("\n\n***INFO*** Maps Installed: %s\t\tAlready Installed: %s\t\tSkipped-Low Rating: %s\t\tInstall Failed: %s\t\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsFailed, l))
 
