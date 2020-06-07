@@ -2,10 +2,15 @@ import os
 import gdown
 import csv
 import hashlib
+import argparse
 
 from pathlib import Path
 
-
+parser = argparse.ArgumentParser(description='Onward Custom Map Downloader')
+# Optional argument
+parser.add_argument('-rating', type=int,
+                    help='Rating Filter: Only install maps that have this star rating or better')
+                    
 
 
 #desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
@@ -16,7 +21,8 @@ from pathlib import Path
 filenameMapList = 'mapList.csv'
 mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
 
-pathToMaps = "CustomContent2/"
+onwardPath = "appdata/"
+mapFolder = "CustomContent/"
 
 # TODO
 # Make sure Onward directory exists
@@ -25,26 +31,21 @@ pathToMaps = "CustomContent2/"
 
 
 def needMap(mapID, mapHash):
-	infoFile=pathToMaps + mapID + ".info"
-	contentFile=pathToMaps + mapID + ".content"  
+	infoFile=onwardPath + mapFolder + mapID + ".info"
+	contentFile=onwardPath + mapFolder + mapID + ".content"  
 	
 	# If .content file doesn't exist you need to download the map
 	my_file = Path(contentFile)
 	if my_file.is_file() is False:
     		return True
-	else:
-		print("Found " + contentFile)
 	
 	# if .info file doesn't exist the hash check will fail so you still need to download the map
 	my_file = Path(infoFile)
 	if my_file.is_file() is False:
     		return True
-	else:
-		print("Found " + infoFile)
     		    		
     	# check hash of .info file to verify if map the user already has is current\
 	h=getHash(infoFile)
-	print("CHash: " + h + " recordedH: " + mapHash)
 	if h != mapHash:
 		return True	
 
@@ -52,14 +53,15 @@ def needMap(mapID, mapHash):
 	return False
 	
 def downloadMap(mapID, mapDownloadURL, zipHash):
-	downloadName=pathToMaps + mapID + ".zip"
-	print("Downloading: " + mapDownloadURL + " to: " + downloadName);
-	downloadOkay=gdown.cached_download(mapDownloadURL, downloadName, md5=zipHash, postprocess=gdown.extractall)
-	
-	print("Downloaded: " + downloadOkay)
-	# Delete the zip file after downloading/extracting and verifying md5 match
-	if downloadOkay == downloadName:
-		os.remove(downloadName)
+	downloadName=onwardPath + mapID + ".zip"
+		
+	try:
+		gdown.cached_download(mapDownloadURL, downloadName, md5=zipHash, postprocess=gdown.extractall)
+	except AssertionError as error:
+		print("ERROR: Map ID: %s did not have the expected hash value... This map will not be installed" %(mapID))
+		
+	# Delete the zip file after downloading/extracting.
+	os.remove(downloadName)
 
 
 def getHash(filename):
@@ -84,27 +86,43 @@ def getHash(filename):
    
 
 
-# Download the custom maps list from Google Drive
-#gdown.download(mapListGoogleURL, filenameMapList, quiet=False)
-
-
-# Read the maps list from the file as a Dictionary
-reader = csv.DictReader(open(filenameMapList))
-
-mapList = {}
-for row in reader:
-    for column, value in row.items():
-        mapList.setdefault(column, []).append(value)
-        
-l=len(mapList["Map Name"])
-for i in range(0,l):
-#	mapFileName=mapList["ID"][i] & ".info"
-#	print(mapList["Map Name"][i])
-	if needMap(mapList["ID"][i], mapList["Info Hash"][i]):
-		print(mapList["Zip Hash"][i] + " len: " + str(len(mapList["Zip Hash"][i])))
-		downloadMap(mapList["ID"][i], mapList["Download URL"][i], mapList["Zip Hash"][i])
+if __name__ == "__main__":
+	args = parser.parse_args()
+	
+	# Set the rating filter. If nothing is specififed install all maps
+	if args.rating is not None and args.rating > 0:
+		ratingFilter=args.rating
 	else:
-		print("Skipping " + mapList["Map Name"][i] + " ID: " + mapList[ID][i] + " already exists...")
+		ratingFilter=0
+
+		
+	# Download the custom maps list from Google Drive
+	print("Downloading the custom maps metadata...")
+	#gdown.download(mapListGoogleURL, filenameMapList, quiet=False)
+
+
+	# Read the maps list from the file as a Dictionary
+	reader = csv.DictReader(open(filenameMapList))
+
+	mapList = {}
+	for row in reader:
+		for column, value in row.items():
+			mapList.setdefault(column, []).append(value)
+		
+	# Traverse the map list	
+	l=len(mapList["Map Name"])
+	for i in range(0,l):
+		if mapList["Rating"][i].isnumeric() is False:
+			mapList["Rating"][i]="0";
+		
+		if int(mapList["Rating"][i]) >= ratingFilter:
+			if needMap(mapList["ID"][i], mapList["Info Hash"][i]):
+				print("****Downloading map \"%s\" ID:%s Rating:%s" %(mapList["Map Name"][i], mapList["ID"][i],mapList["Rating"][i]))
+				downloadMap(mapList["ID"][i], mapList["Download URL"][i], mapList["Zip Hash"][i])
+			else:
+				print("Skipping map \"%s\" ID: %s as it is already installed." %(mapList["Map Name"][i], mapList["ID"][i]))
+		else:
+			print("Skipping map \"%s\" ID: %s as it has a rating of %s which is below your threshold of %s" %(mapList["Map Name"][i], mapList["ID"][i],mapList["Rating"][i], ratingFilter))		
 
 
 
