@@ -14,7 +14,8 @@ import sys
 import tqdm
 import os.path as osp
 
-
+# GUI libs
+import PySimpleGUI as sg
 
 
 					
@@ -22,11 +23,13 @@ import os.path as osp
 # Global Variables
 ###############################################################################
 appVersion = 1.00
+
 settingsFile="Onward Custom Map Sync Settings.xml"
 XMLSettings = None
 
 filenameMapList = 'Map List.csv'
 mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
+maps = {}	# Dictionary of map data download from Google Drive Spreadsheet
 
 if "APPDATA" not in os.environ:
 	reportMessage("***ERROR*** APPDATA environmental variable not set. Don't know how to find Onward Custom Maps folder")
@@ -98,7 +101,10 @@ def saveSettings():
 	f.close()
 
 
-
+###############################################################################
+# Add an entry for this program to run automatically via 
+# the Windows Task Scheduler
+###############################################################################
 def createTask(timeToRun):
 	print("Feature not implimented yet...")
 	exit()
@@ -363,25 +369,35 @@ def get_url_from_gdrive_confirmation(contents):
 			
 ###############################################################################
 # Verify this map doesn't mean any exclude filters
+# Returnss 
+#	"" if map isn't filterd otherwise returns the type of filter detected
+#	as a string
 ###############################################################################
 def filterMap(mapID, mapName, mapAuthor):
 	authorFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
 	for i in range(0,len(authorFilter)):
 		if authorFilter[i].text == mapAuthor:
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- Filtered by Author." %(mapName, mapID, mapAuthor))
-			return True
+			return "AUTHROR"
 			
 	IDFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_ID')
 	for i in range(0,len(IDFilter)):
 		if IDFilter[i].text == mapID:
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- This map is marked not to install." %(mapName, mapID, mapAuthor))
-			return True	
+			return "MAP NAME"
+	
+	return ""
 	
 
 ###############################################################################
 # Verify if we already have the map installed
 # -Check if a mapID.info & mapID.content already exist in our custom map folder
 # -Check if mapID.info MD5 hash matches current version
+# Returns
+#	"INSTALLED"	Map already installed and passes hash verification
+#	"REINSTALL"	Map already installed but failed validation
+#	"DOWNLOAD"	Map doesn't exist
+#	"UPDATE"	Map installed but detecting a newer version is available
 ###############################################################################
 def needMap(mapID, mapHash):
 	infoFile=onwardPath + mapFolder + mapID + ".info"
@@ -390,20 +406,20 @@ def needMap(mapID, mapHash):
 	# If .content file doesn't exist you need to download the map
 	my_file = Path(contentFile)
 	if my_file.is_file() is False:
-			return True
+			return "DOWNLOAD"
 	
 	# if .info file doesn't exist the hash check will fail so you still need to download the map
 	my_file = Path(infoFile)
 	if my_file.is_file() is False:
-			return True
+			return "REINSTALL"
 			    		
-		# check hash of .info file to verify if map the user already has is current\
+		# check hash of .info file to verify if map the user already has is current
 	h=getHash(infoFile)
 	if h != mapHash:
-		return True	
+		return "UPDATE"	
 
 	# All test passed so we don't need this map file    	
-	return False
+	return "INSTALLED"
 	
 ###############################################################################
 # Download a mapID.zip file and verify the MD5 sum matches
@@ -446,7 +462,7 @@ def getMap(mapID, mapDownloadURL, zipHash, quiet=True):
 	# Sucessfully downloaded and extracted map so delete zip file
 	delMap = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Delete_Map_Zips_After_Install')
 	try:
-		if delMap[0].text == "True":
+		if delMap[0].text.upper() == "TRUE":
 			os.remove(downloadName)	
 	except:
 		pass
@@ -476,6 +492,150 @@ def getHash(filename):
    
 
 
+###############################################################################
+# Start Downloading Maps
+###############################################################################
+def startDownload():
+	l=len(maps["MAP NAME"])
+	
+	totalMapsInstalled=0
+	totalMapsAlreadyInstalled=0	
+	totalMapsSkippedRating=0
+	totalMapsExcluded=0
+	totalMapsFailed=0
+	
+	# Traverse the list of maps		
+	for i in range(0,l):
+	
+		# If no rating is defined set it to 0 so the filter works properly.
+		if maps["RATING"][i].isnumeric() is False:
+			maps["RATING"][i]="0";
+		
+		# Don't download maps that have a lower star rating that the user specified
+		if int(maps["RATING"][i]) < ratingFilter:
+			totalMapsSkippedRating = totalMapsSkippedRating + 1
+			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i].ljust(30), maps["ID"][i]))	
+			continue	
+
+		# Check for custom filters - Specific Map or Specific Author
+		if filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i]) != "":
+			totalMapsExcluded = totalMapsExcluded + 1
+			continue				
+			
+		# Verify the map isn't already installed
+		if needMap(maps["ID"][i], maps["INFO HASH"][i]) != "INSTALLED":
+			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
+			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], quiet=False) is True:
+				totalMapsInstalled = totalMapsInstalled + 1
+				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
+			else:
+				totalMapsFailed = totalMapsFailed + 1
+				reportMessage("\n***ERROR*** Map    \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
+		else:
+			totalMapsAlreadyInstalled = totalMapsAlreadyInstalled + 1
+			reportMessage("***SKIPPING MAP***    \"%s\" by %s\tID: %s \tAlready installed." %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i]))
+
+	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsExcluded, totalMapsFailed, l))
+	os.system("pause")
+
+
+###############################################################################
+# Setup the GUI
+###############################################################################
+def displayGUI():
+	l=len(maps["MAP NAME"])
+	
+	totalMapsInstalled=0
+	totalMapsAlreadyInstalled=0	
+	totalMapsSkippedRating=0
+	totalMapsExcluded=0
+	totalMapsFailed=0
+
+
+
+	
+	#Setup the map list table
+	rows, cols = (l, 6) 
+	tableData = [[""]*cols]*rows 
+	# ------ Make the Table Data ------
+	headings=["Map Name", "Author", "Stars", "Published", "Updated", "Status"]
+	
+	for i in range(0,l):
+		status=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i])
+		if status != "":
+			status="IGNORE:" + status
+		elif int(maps["RATING"][i]) < ratingFilter:
+			status="IGNORE:RATING"
+		else:
+			status=needMap(maps["ID"][i], maps["INFO HASH"][i])
+		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
+
+
+	# Create table object
+	table=sg.Table(values=tableData[1:][:], headings=headings, max_col_width=55,
+					auto_size_columns=False,
+					display_row_numbers=False,
+					col_widths=[25,20,8,12,12,20],
+					justification='center',
+					num_rows=20,
+					key='-TABLE-',
+					vertical_scroll_only=False,
+					font='Courier 10',
+					header_font='Courier 13',
+					tooltip='This is a table')
+
+	#from pprint import pprint
+	#pprint(vars(table))
+
+	
+	# ------ Window Layout ------
+	settingsObjs=[sg.Button(button_text="Load", key='Load'), sg.Button(button_text="Save", key='Save'), sg.Button(button_text="Default", key='Default')]
+	settingFrame=sg.Frame(title="Settings", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs]) 
+
+	# Setup Author Filte
+	authorList=list(set( maps["AUTHOR"])) # Get unique lists of Authors
+	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, default_value=authorList[0])
+	authorBtn=sg.Button(button_text="Apply", key='Author')	
+	authorObjs=[authorListCombobox, authorBtn]
+	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", layout=[authorObjs]) 
+	
+	#Setup Rating Filter
+	ratingList=["All", "5 Star", "4 Star", "3 Star", "2 Star", "1 Star"]
+	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, default_value="All")
+	ratingBtn=sg.Button(button_text="Apply", key='Rating')		
+	ratingObjs=[ratingListCombobox, ratingBtn]
+	filterFrameRating=sg.Frame(title="Minimum Star Rating", title_location="n", element_justification="center", relief="groove", layout=[ratingObjs]) 
+	
+	filterFrameObjs=[filterFrameAuthor, filterFrameRating]
+	filterFrame=sg.Frame(title="Exclude Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
+
+	# Layout of GUI
+	layout = [ [settingFrame, filterFrame],
+			[table]
+		]
+
+
+	# ------ Create Window ------
+	sg.change_look_and_feel('GreenTan')
+	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,600) )
+
+	
+	# ------ Event Loop ------
+	while True:
+		event, values = window.read()
+		print(event, values)	
+		if event == sg.WIN_CLOSED:
+			break		
+		elif event == "Load":
+			loadSettings()
+		elif event == "Save":
+			saveSettings()
+		elif event == "Default":
+			createDefaultSettings()		
+		pass
+
+	window.close()
+				   				
 ###############################################################################
 # Obtain the custom map list from Google Doc and install missing maps
 ###############################################################################
@@ -550,58 +710,21 @@ if __name__ == "__main__":
 		reportMessage("***ERROR*** Can't validate version of Maps List.")
 		exit()
 		
-	#reportMessage(x.index('o'))	
-	#versionCheck()	
 
-	totalMapsInstalled=0
-	totalMapsAlreadyInstalled=0	
-	totalMapsSkippedRating=0
-	totalMapsExcluded=0
-	totalMapsFailed=0
-	
-	# Traverse the list of maps		
-	for i in range(0,l):
-	
-		# If no rating is defined set it to 0 so the filter works properly.
-		if maps["RATING"][i].isnumeric() is False:
-			maps["RATING"][i]="0";
-		
-		# Don't download maps that have a lower star rating that the user specified
-		if int(maps["RATING"][i]) < ratingFilter:
-			totalMapsSkippedRating = totalMapsSkippedRating + 1
-			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i].ljust(30), maps["ID"][i]))	
-			continue	
-
-		# Check for custom filters - Specific Map or Specific Author
-		if filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i]):
-			totalMapsExcluded = totalMapsExcluded + 1
-			continue				
-			
-		# Verify the map isn't already installed
-		if needMap(maps["ID"][i], maps["INFO HASH"][i]):
-			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
-			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], quiet=False) is True:
-				totalMapsInstalled = totalMapsInstalled + 1
-				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
-			else:
-				totalMapsFailed = totalMapsFailed + 1
-				reportMessage("\n***ERROR*** Map    \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
-		else:
-			totalMapsAlreadyInstalled = totalMapsAlreadyInstalled + 1
-			reportMessage("***SKIPPING MAP***    \"%s\" by %s\tID: %s \tAlready installed." %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i]))
-
+	# Display the GUI or if -noGUI specified just start downloading
+	if args.noGUI is not None:
+		startDownload()
+	else:
+		displayGUI()
 			
 			
 	# Delete the custom map metadata
 	delMapList = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Delete_Map_List_On_Exit')
 	try:
-		if delMapList[0].text == "True":	
+		if delMapList[0].text.upper() == "TRUE":	
 			os.remove(filenameMapList)
 	except:
 		pass
-
-	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsExcluded, totalMapsFailed, l))
-	os.system("pause")
 
 
 
