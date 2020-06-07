@@ -8,12 +8,10 @@ from pathlib import Path
 
 
                     
+###############################################################################
+# Global Variables
+###############################################################################
 
-
-#desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
-# Prints: C:\Users\sdkca\Desktop
-#print("The Desktop path is: " + desktop)
-#print(os.environ)
 
 appVersion = "1.0"
 filenameMapList = 'mapList.csv'
@@ -22,18 +20,25 @@ mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndf
 onwardPath = "appdata/"
 mapFolder = "CustomContent/"
 
-
+# Setup Arguments
 parser = argparse.ArgumentParser(description='Onward Custom Map Downloader version %s' %(appVersion))
-# Optional argument
 parser.add_argument('-rating', type=int,
                     help='Rating Filter: Only install maps that have this star rating or better')
                     
 # TODO
 # Make sure Onward directory exists
-# Make a CustomContent folder if it doesn't exist
+#desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+# Prints: C:\Users\sdkca\Desktop
+#print("The Desktop path is: " + desktop)
+#print(os.environ)
 
 
 
+###############################################################################
+# Verify if we already have the map installed
+# -Check if a mapID.info & mapID.content already exist in our custom map folder
+# -Check if mapID.info MD5 hash matches current version
+###############################################################################
 def needMap(mapID, mapHash):
 	infoFile=onwardPath + mapFolder + mapID + ".info"
 	contentFile=onwardPath + mapFolder + mapID + ".content"  
@@ -56,6 +61,10 @@ def needMap(mapID, mapHash):
 	# All test passed so we don't need this map file    	
 	return False
 	
+
+###############################################################################
+# Download a mapID.zip file and verify the MD5 sum matches
+###############################################################################	
 def downloadMap(mapID, mapDownloadURL, zipHash):
 	downloadName=onwardPath + mapID + ".zip"
 		
@@ -68,6 +77,10 @@ def downloadMap(mapID, mapDownloadURL, zipHash):
 	#os.remove(downloadName)
 	return True
 
+
+###############################################################################
+# Compute an MD5 Sum for a file
+###############################################################################
 def getHash(filename):
    """"This function returns the SHA-1 hash
    of the file passed into it"""
@@ -90,6 +103,9 @@ def getHash(filename):
    
 
 
+###############################################################################
+# Obtain the custom map list from Google Doc and install missing maps
+###############################################################################
 if __name__ == "__main__":
 	args = parser.parse_args()
 	
@@ -101,14 +117,14 @@ if __name__ == "__main__":
 
 		
 	# Download the custom maps list from Google Drive
-	print("Obtaining the custom maps list...")	
+	print("***INFO*** Obtaining the complete custom maps list from server.")	
 	try:
-		gdown.download(mapListGoogleURL, filenameMapList, quiet=False)
+		gdown.download(mapListGoogleURL, filenameMapList, quiet=True)
 	except AssertionError as error:
-		print("ERROR: Unable to obtain the list of custom maps... Please try again later.")	
+		print("\n***ERROR*** Unable to obtain the list of custom maps... Please try again later.\n")	
 		exit()
 
-
+	print("***INFO*** List downloaded sucessfully...")
 
 	# Read the maps list from the file as a Dictionary
 	reader = csv.DictReader(open(filenameMapList))
@@ -118,22 +134,20 @@ if __name__ == "__main__":
 		for column, value in row.items():
 			maps.setdefault(column.upper(), []).append(value)
 		
-	print (maps.keys())
 	# Make sure the map list we download contains valid data	
 	validKeys = {"MAP NAME":1, "ID":2, "INFO HASH":3, "RELEASE DATE":4, "UPDATE DATE":5, "RATING":6, "DOWNLOAD URL":7, "ZIP HASH":8}	
 	if maps.keys() != validKeys.keys(): 
-		print("ERROR: Unable to obtain the list of custom maps... Please try again later.")	
-		print("here")
-		
+		print("\n***ERROR*** Unable to obtain the list of custom maps... Please try again later.\n")	
 		exit()
 	
 	l=len(maps["MAP NAME"])
 	if l is None or l < 1:	
-		print("ERROR: Map list downloaded but is empty... Try again later.")	
+		print("\n***ERROR*** Map list downloaded but is empty... Try again later.\n")	
 		exit()			
 
 	totalMapsInstalled=0
-	totalMapsSkipped=0
+	totalMapsAlreadyInstalled=0	
+	totalMapsSkippedRating=0
 	totalMapsFailed=0
 	
 	# Traverse the list of maps		
@@ -145,24 +159,25 @@ if __name__ == "__main__":
 		# Don't download maps that have a lower star rating that the user specified
 		if int(maps["RATING"][i]) >= ratingFilter:
 			if needMap(maps["ID"][i], maps["INFO HASH"][i]):
-				print("\n****Downloading map \"%s\"\t\tID:%s\t\tRating:%s" %(maps["MAP NAME"][i], maps["ID"][i],maps["RATING"][i]))
+				print("***DOWNLOADING MAP*** \"%s\"\t\tID:%s\t\tRating:%s" %(maps["MAP NAME"][i], maps["ID"][i],maps["RATING"][i]))
 				if downloadMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i]) is True:
 					totalMapsInstalled = totalMapsInstalled + 1
+					print("***SUCCESSFULLY INSTALLED*** \"%s\"\t\tID:%s\n" %(maps["MAP NAME"][i],maps["ID"][i]))
 				else:
 					totalMapsFailed = totalMapsFailed + 1
-					print("\r\r***ERROR: Map \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"], maps["ID"]))	
+					print("\n***ERROR*** Map \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
 			else:
-				totalMapsSkipped = totalMapsSkipped + 1
-				print("Skipping map \"%s\" ID: %s ---- already installed." %(maps["MAP NAME"][i], maps["ID"][i]))
+				totalMapsAlreadyInstalled = totalMapsAlreadyInstalled + 1
+				print("***SKIPPING MAP*** \"%s\" ID: %s ---- already installed." %(maps["MAP NAME"][i], maps["ID"][i]))
 		else:
-			totalMapsSkipped = totalMapsSkipped + 1
-			print("Skipping map \"%s\" ID: %s ---- Map Rating %s below threshold %s" %(maps["MAP NAME"][i], maps["ID"][i],maps["RATING"][i], ratingFilter))	
+			totalMapsSkippedRating = totalMapsSkippedRating + 1
+			print("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i], maps["ID"][i]))	
 			
 			
 	# Delete the custom map metadata
 	os.remove(filenameMapList)	
 
-	print("\n\nMaps Installed: %s\tMaps Skipped: %s\tTotal Maps Failed To Install:%s\tTotal Maps:%s" % (totalMapsInstalled, totalMapsSkipped, totalMapsFailed, l))
+	print("\n\n***INFO*** Maps Installed: %s\t\tAlready Installed: %s\t\tSkipped-Low Rating: %s\t\tInstall Failed: %s\t\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsFailed, l))
 
 
 
