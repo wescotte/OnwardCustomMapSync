@@ -2,6 +2,7 @@ import os
 import csv
 import hashlib
 import argparse
+import datetime 
 from zipfile import ZipFile
 from pathlib import Path
 
@@ -17,7 +18,11 @@ import os.path as osp
 # GUI libs
 import PySimpleGUI as sg
 
-					
+# TODO --- Use enums everywhere it makes sense! Right now it's kinda messy
+# TODO --- "Only update existing maps" quick functionality
+#		Only look to download maps already installed that have updates
+#		Add a "NEW" status that highlights maps that didn't exist last time the app was run?
+
 ###############################################################################
 # Global Variables
 ###############################################################################
@@ -25,6 +30,7 @@ appVersion = 1.00
 
 settingsFile="Onward Custom Map Sync Settings.xml"
 XMLSettings = None
+downloadedAnything = False	# If this is true we update the Last Run Date setting in the XML file on exit
 
 filenameMapList = 'Map List.csv'
 mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
@@ -38,7 +44,6 @@ onwardPath = os.environ["APPDATA"] + "\..\LocalLow\Downpour Interactive\Onward\\
 mapFolder = "CustomContent\\"
 
 # Pointer to the GUI window
-global globalWindow
 globalWindow = None
 
 		
@@ -60,6 +65,7 @@ def createDefaultSettings():
 	global XMLSettings
 	
 	root = etree.Element('Onward_Custom_Map_Sync_Settings')
+	runDate = etree.SubElement(root, 'Last_Date_Run')
 	mlURL = etree.SubElement(root, 'Map_List_URL')
 	mlFN = etree.SubElement(root, 'Map_List_Filename')
 	DelZIPs = etree.SubElement(root, 'Delete_Map_Zips_After_Install')
@@ -68,6 +74,7 @@ def createDefaultSettings():
 	
 	rFilter = etree.SubElement(exlude, 'Ratings_Filter')
 	
+	runDate.text=str(datetime.date.today())
 	mlURL.text = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
 	mlFN.text = 'Map List.csv'
 	DelZIPs.text = 'True'
@@ -102,6 +109,22 @@ def saveSettings():
 	f.write(mydata)
 	f.close()
 
+
+###############################################################################
+# Load existing XML settings and just update the run date
+###############################################################################
+def updateLastRunDate():
+	# Load from disk instead of updating current settings because they could have
+	# applied filters they don't want permanently stored
+	loadSettings()
+	try:
+		runDate = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Last_Date_Run')
+		runDate[0].text=datetime.date.today()
+	except: 
+		reportMessage('***ERROR*** Unable to update last run date. Your "Onward Custom Map Sync Settings.xml" might be corrupted....')
+		reportMessage('***ERROR***		You can erase this file and run the program again and it will create a new one with default settings')
+	saveSettings()
+	
 
 ###############################################################################
 # Add an entry for this program to run automatically via 
@@ -318,8 +341,11 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 		total = res.headers.get("Content-Length")
 		if total is not None:
 			total = int(total)
-			
-		totalNumberOfBytes = int(fileSize) * 1024**2 # Convert MB to bytes for status bar			
+		
+		try:
+			totalNumberOfBytes = int(fileSize) * 1024**2 # Convert MB to bytes for status bar
+		except:
+			totalNumberOfBytes=0
 		if not quiet:
 			#Google Drive doesn't seem to properly report the file size during download so we just store it for each zip file
 			#pbar = tqdm.tqdm(total=total, unit="B", unit_scale=True)
@@ -399,9 +425,16 @@ def get_url_from_gdrive_confirmation(contents):
 ###############################################################################
 def filterMap(mapID, mapName, mapAuthor, mapRating):
 	filterMsg = ""
-
-	if mapRating == "-1":
-		filterMsg="FILTERED PER AUTHROR'S REQUEST"
+	
+	# mapRating going to be a string so convert it to an integer
+	try:
+		rating=int(mapRating)
+	except:
+		rating=0
+		print(mapRating)
+		
+	if rating == -1:
+		filterMsg="UNAVAILBLE FOR D/L AT AUTHROR'S REQUEST"
 		return filterMsg
 		
 	IDFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_ID')
@@ -419,8 +452,8 @@ def filterMap(mapID, mapName, mapAuthor, mapRating):
 		else:
 			filterMsg = "FILTERED BY: AUTHOR"
 
-	ratingFilter=getRatingFilter()
-	if int(mapRating) < ratingFilter:
+	ratingFilter=getXMLRatingFilter()
+	if rating < ratingFilter:
 		if len(filterMsg) > 0:
 			filterMsg = filterMsg + " & RATING"
 		else:
@@ -464,16 +497,19 @@ def needMap(mapID, mapHash):
 ###############################################################################
 # Download a mapID.zip file and verify the MD5 sum matches
 ###############################################################################	
-def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=True, progressBarsGUI=None):
+def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGUI=None):
+	# Set this to True so we keep track of the last time we actually downloaded content
+	global downloadedAnything
+	downloadedAnything=True
 	
 	# Download the Google Drive file
 	downloadName=onwardPath + mapID + ".zip"
-	
+
 	if "DRIVE.GOOGLE.COM" in mapDownloadURL.upper():
 		if downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI) == False:
 			return False
 	elif "KOIZ" in mapDownloadURL.upper():
-		reportMessage("***INFO*** Koiz doesn't want his maps hosted here... Please ask him to reconsider")
+		reportMessage("***INFO*** Koiz doesn't want his maps hosted anywhere except official Onward servers... Please ask him to reconsider as this tool can't access those files directly.")
 		return False
 	else:
 		reportMessage("***ERROR*** Don't know how to download URL: %s" % mapDownloadURL)
@@ -534,7 +570,7 @@ def getHash(filename):
 ###############################################################################
 # Get the rating filter from command line argument or XML setting
 ###############################################################################
-def getRatingFilter():
+def getXMLRatingFilter():
 	# Set the rating filter. If nothing is specififed use value in XML settings. If that doesn't exist default 0 / All maps
 	if args.rating is not None and args.rating > 0:
 		ratingFilter=args.rating
@@ -584,7 +620,7 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 		globalWindow=window
 		
 		
-	ratingFilter=getRatingFilter()
+	ratingFilter=getXMLRatingFilter()
 			
 	totalMapsInstalled=0
 	totalMapsAlreadyInstalled=0	
@@ -609,11 +645,16 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 			
 			
 		# If no rating is defined set it to 0 so the filter works properly.
-		if maps["RATING"][i].isnumeric() is False:
-			maps["RATING"][i]="0";
+#		if maps["RATING"][i].isnumeric() is False:
+#			maps["RATING"][i]="0";
 		
 		# Don't download maps that have a lower star rating that the user specified
-		if int(maps["RATING"][i]) < ratingFilter:
+		rating=0
+		try:
+			raint=int(maps["RATING"][i])
+		except:
+			rating=0
+		if rating < ratingFilter:
 			totalMapsSkippedRating = totalMapsSkippedRating + 1
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i].ljust(30), maps["ID"][i]))	
 			continue	
@@ -626,7 +667,7 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 		# Verify the map isn't already installed
 		if needMap(maps["ID"][i], maps["INFO HASH"][i]) != "INSTALLED":
 			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
-			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=True, progressBarsGUI=window) is True:
+			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=False, progressBarsGUI=window) is True:
 				totalMapsInstalled = totalMapsInstalled + 1
 				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
 			else:
@@ -685,15 +726,15 @@ def displayGUI():
 	authorList=list(set( maps["AUTHOR"])) # Get unique lists of Authors
 	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), change_submits=True, default_value=authorList[0], key="AuthorSelected")
 	# Since we need to keep the FILTER/CLEAR in sync we need to check if the default authtor is currently being filtered or not
-	btnText="FILTER"
+	btnText="EXCLUDE"
 	if processXMLFilter("EXISTS", "Exlude_Map_Author", authorList[0]):
-		btnText="CLEAR"
+		btnText="INCLUDE"
 	authorBtn=sg.Button(button_text=btnText, size=(7,1), key='Author')	
 	authorObjs=[authorListCombobox, authorBtn]
 	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", layout=[authorObjs]) 
 	
 	#Setup Rating Filter
-	ratingFilter=getRatingFilter()
+	ratingFilter=getXMLRatingFilter()
 	
 	ratingList=["All", "1 Star", "2 Star", "3 Star", "4 Star", "5 Star"]
 	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(10,1), default_value=ratingList[ratingFilter])
@@ -778,7 +819,7 @@ def updateMapData(window, summaryData):
 							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0,		\
 							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
 	
-	ratingFilter=getRatingFilter()
+	ratingFilter=getXMLRatingFilter()
 
 	l=len(maps["MAP NAME"])
 	#Setup the map list table
@@ -804,8 +845,14 @@ def updateMapData(window, summaryData):
 				summaryData["totalSkippedAuthor"]=summaryData["totalSkippedAuthor"]+1
 			elif status.find("MAP NAME") != -1:
 				summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1	
-			summaryData["totalExcluded"]=summaryData["totalExcluded"]+1	
-	
+			summaryData["totalExcluded"]=summaryData["totalExcluded"]+1			
+		
+		# Special case where we don't have a map installed but rating is -1 meaning author doesn't want distribution
+		if status==needStatus and filterStatus.find("UNAVAILBLE") != -1:
+			status=filterStatus
+			summaryData["totalToInstall"]=summaryData["totalToInstall"]-1
+			summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1
+			
 		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], status,  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
 		
 
@@ -819,9 +866,9 @@ def updateMapData(window, summaryData):
 	# Update the button text on the Author Remove to reflect the current seletion
 	author=str(window["AuthorSelected"].Get())
 	if processXMLFilter("EXISTS", "Exlude_Map_Author", author) == True:
-		window["Author"].update(text="CLEAR")	
+		window["Author"].update(text="INCLUDE")	
 	else:
-		window["Author"].update(text="FILTER")		
+		window["Author"].update(text="EXCLUDE")		
 
 ###############################################################################
 # Add/Remove or Check if a map filter exists in the XML data
@@ -926,6 +973,12 @@ if __name__ == "__main__":
 			os.remove(filenameMapList)
 	except:
 		pass
+		
+	
+	# If we downloaded anything this session update the last run date
+	# global downloadedAnything
+	if downloadedAnything is True:
+		updateLastRunDate()
 
 
 
