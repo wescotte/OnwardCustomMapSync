@@ -100,6 +100,9 @@ def saveSettings():
 
 
 def createTask(timeToRun):
+	print("Feature not implimented yet...")
+	exit()
+	
 	# How to delete a task...
 	"""
 	import pythoncom, time, win32api
@@ -251,8 +254,8 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 		try:
 			res = s.get(url, stream=True)
 		except requests.exceptions.ProxyError as e:
-			reportMessage("An error has occurred using proxy:", proxy, file=sys.stderr)
-			reportMessage(e, file=sys.stderr)
+			print("An error has occurred using proxy:", proxy, file=sys.stderr)
+			print(e, file=sys.stderr)
 			return False
 
 		# Save cookies
@@ -267,20 +270,20 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 		try:
 			url = get_url_from_gdrive_confirmation(res.text)
 		except RuntimeError as e:
-			reportMessage("Access denied with the following error:")
+			print("Access denied with the following error:")
 			error = "\n".join(textwrap.wrap(str(e)))
 			error = indent_func(error, "\t")
-			reportMessage("\n", error, "\n", file=sys.stderr)
-			reportMessage(
+			print("\n", error, "\n", file=sys.stderr)
+			print(
 				"You may still be able to access the file from the browser:",
 				file=sys.stderr,
 			)
-			reportMessage("\n\t", url_origin, "\n", file=sys.stderr)
+			print("\n\t", url_origin, "\n", file=sys.stderr)
 			return False
 
 		if url is None:
-			reportMessage("Permission denied:", url_origin, file=sys.stderr)
-			reportMessage(
+			print("Permission denied:", url_origin, file=sys.stderr)
+			print(
 				"Maybe you need to change permission over "
 				"'Anyone with the link'?",
 				file=sys.stderr,
@@ -289,9 +292,9 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 	# End While
 	
 	if not quiet:
-		reportMessage("Downloading...", file=sys.stderr)
-		reportMessage("From:", url_origin, file=sys.stderr)
-		reportMessage(
+		print("Downloading...", file=sys.stderr)
+		print("From:", url_origin, file=sys.stderr)
+		print(
 			"To:",
 			localFileName,
 			file=sys.stderr,
@@ -322,7 +325,7 @@ def downloadGoogleDriveFile(localFileName, url, quiet=True):
 	
 
 	except IOError as e:
-		reportMessage(e, file=sys.stderr)
+		print(e, file=sys.stderr)
 		f.close()		
 		os.remove(localFileName)
 		return False
@@ -480,11 +483,8 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	
 	if args.scheduleDaily is not None:
-		createTask(args.scheduleDaily)
+		#createTask(args.scheduleDaily)
 		exit()
-	
-	createTask("24:55")
-	exit()
 	
 	loadSettings()
 	
@@ -526,8 +526,9 @@ if __name__ == "__main__":
 	f.close()
 		
 	# Make sure the map list we download contains valid data	
+	# TODO: Make this more inteligent.... Maybe just go 1 by 1 and verify each key matches
 	validKeys = {"MAP NAME":1, "AUTHOR":2, "ID":3, "INFO HASH":4, "RELEASE DATE":5, "UPDATE DATE":6, "RATING":7, "DOWNLOAD URL":8, "ZIP HASH":9, "MISC FIELDS":10}	
-	if maps.keys() != validKeys.keys(): 
+	if maps.keys() < validKeys.keys(): 
 		print (maps.keys())
 		reportMessage("\n***ERROR*** Map List Strucure does not match expected format... Check for an update to this app\n")	
 		exit()
@@ -568,7 +569,7 @@ if __name__ == "__main__":
 		# Don't download maps that have a lower star rating that the user specified
 		if int(maps["RATING"][i]) < ratingFilter:
 			totalMapsSkippedRating = totalMapsSkippedRating + 1
-			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i], maps["ID"][i]))	
+			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- Map is rated below threshold" %(maps["MAP NAME"][i].ljust(30), maps["ID"][i]))	
 			continue	
 
 		# Check for custom filters - Specific Map or Specific Author
@@ -578,16 +579,16 @@ if __name__ == "__main__":
 			
 		# Verify the map isn't already installed
 		if needMap(maps["ID"][i], maps["INFO HASH"][i]):
-			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\t\tID: %s\t\tMap Star Rating: %s" %(maps["MAP NAME"][i], maps["AUTHOR"][i], maps["ID"][i],maps["RATING"][i]))
+			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
 			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], quiet=False) is True:
 				totalMapsInstalled = totalMapsInstalled + 1
-				reportMessage("***SUCCESSFULLY INSTALLED*** \"%s\"\t\tID:%s\n" %(maps["MAP NAME"][i],maps["ID"][i]))
+				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
 			else:
 				totalMapsFailed = totalMapsFailed + 1
-				reportMessage("\n***ERROR*** Map \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
+				reportMessage("\n***ERROR*** Map    \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
 		else:
 			totalMapsAlreadyInstalled = totalMapsAlreadyInstalled + 1
-			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s ---- already installed." %(maps["MAP NAME"][i], maps["ID"][i]))
+			reportMessage("***SKIPPING MAP***    \"%s\" by %s\tID: %s \tAlready installed." %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i]))
 
 			
 			
