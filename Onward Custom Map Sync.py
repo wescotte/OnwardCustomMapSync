@@ -309,24 +309,32 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 		total = res.headers.get("Content-Length")
 		if total is not None:
 			total = int(total)
+			
+		totalNumberOfBytes = int(fileSize) * 1024**2 # Convert MB to bytes for status bar			
 		if not quiet:
 			#Google Drive doesn't seem to properly report the file size during download so we just store it for each zip file
 			#pbar = tqdm.tqdm(total=total, unit="B", unit_scale=True)
-			numberOfBytes = int(fileSize) * 1024**2 # Convert MB to bytes for status bar
-			pbar = tqdm.tqdm(total=numberOfBytes, unit="B", unit_scale=True)
-			
-		# Handle GUI Progress Bars
-		if progressBarsGUI is not None:
-			pass			
+			pbar = tqdm.tqdm(total=totalNumberOfBytes, unit="B", unit_scale=True)
+					
 		#t_start = time.time()
+		bytesWritten=0
 		for chunk in res.iter_content(chunk_size=CHUNK_SIZE):
+			bytesWritten=bytesWritten+len(chunk)
 			f.write(chunk)
 			if not quiet:				
 				pbar.update(len(chunk))
 				
 			# Handle GUI Progress Bars				
 			if progressBarsGUI is not None:
-				pass
+				progress_bar = progressBarsGUI['mapProgress']
+				progress_bar.update_bar(bytesWritten, totalNumberOfBytes)
+				
+				# check to see if the cancel button was clicked and exit loop if clicked
+				event, values = progressBarsGUI.read(timeout=0)
+				if event == 'Cancel' or event == None:
+					progressBarsGUI.close()
+					return False					
+
 		""" Disabled throttling for now				
 			if speed is not None:
 				elapsed_time_expected = 1.0 * pbar.n / speed
@@ -336,9 +344,6 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 		"""
 		if not quiet:
 			pbar.close()
-		# Handle GUI Progress Bars
-		if progressBarsGUI is not None:
-			pass	
 
 	except IOError as e:
 		print(e, file=sys.stderr)
@@ -521,16 +526,30 @@ def getRatingFilter():
 ###############################################################################
 # Start Downloading Maps
 ###############################################################################
-def startDownload(progressBarsGUI=None):
-	# If the user is in GUI mode disable the window from accepting input while 
-	#	downloading and create the progress bars window
-	if progressBarsGUI is not None:
-		pass
-		
-	ratingFilter=getRatingFilter()
-			
+def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 	l=len(maps["MAP NAME"])
 	
+	# If the user is in GUI mode disable the window from accepting input while 
+	#	downloading and create the progress bars window
+	window=None
+	mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='mapProgressText')
+	mapProgress=sg.ProgressBar(1, orientation='h', size=(40, 20), key='mapProgress')
+	allProgressText=sg.Text('Total Progress: Map 1 of %d' % totalMapsToDownload, key='allProgressText')
+	allProgress=sg.ProgressBar(l, orientation='h', size=(40, 20), key='allProgress')
+	
+	if progressBarsGUI is not False:
+		if totalMapsToDownload == 0:
+			sg.popup("You have no maps marked for download.", title="Warning")
+			return
+			
+		# layout the form
+		layout = 	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[sg.Cancel()]]
+
+		# create the form
+		window = sg.Window('Download Progress', layout)
+
+	ratingFilter=getRatingFilter()
+			
 	totalMapsInstalled=0
 	totalMapsAlreadyInstalled=0	
 	totalMapsSkippedRating=0
@@ -538,8 +557,23 @@ def startDownload(progressBarsGUI=None):
 	totalMapsFailed=0
 	
 	# Traverse the list of maps		
+	#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
 	for i in range(0,l):
-	
+		print(i)
+		# Update the progress bar
+		if progressBarsGUI is not False:
+			# check to see if the cancel button was clicked and exit loop if clicked
+			event, values = window.read(timeout=0)
+			if event == 'Cancel' or event == None:
+				break		
+				
+			mapProgressText.Update(value='Downloading Map: %s' % maps["MAP NAME"][i])
+			allProgressText.Update(value='Total Progress: Map %d of %d' % (i, totalMapsToDownload))
+			allProgress.update_bar(totalMapsInstalled, totalMapsToDownload)	
+			#window.Refresh()			
+			
+
+			
 		# If no rating is defined set it to 0 so the filter works properly.
 		if maps["RATING"][i].isnumeric() is False:
 			maps["RATING"][i]="0";
@@ -558,7 +592,7 @@ def startDownload(progressBarsGUI=None):
 		# Verify the map isn't already installed
 		if needMap(maps["ID"][i], maps["INFO HASH"][i]) != "INSTALLED":
 			reportMessage("***DOWNLOADING MAP*** \"%s\" by %s\tID: %s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i],maps["RATING"][i]))
-			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=False) is True:
+			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=True, progressBarsGUI=window) is True:
 				totalMapsInstalled = totalMapsInstalled + 1
 				reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
 			else:
@@ -567,11 +601,14 @@ def startDownload(progressBarsGUI=None):
 		else:
 			totalMapsAlreadyInstalled = totalMapsAlreadyInstalled + 1
 			reportMessage("***SKIPPING MAP***    \"%s\" by %s\tID: %s \tAlready installed." %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i]))
-
+			
 	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" % (totalMapsInstalled, totalMapsAlreadyInstalled,totalMapsSkippedRating, totalMapsExcluded, totalMapsFailed, l))
 
-	if progressBarsGUI is None:
+	print("broke?")
+	if progressBarsGUI is False:
 		os.system("pause")
+	else:
+		window.close()
 
 
 
@@ -584,18 +621,17 @@ def displayGUI():
 	# Create table object
 	rows, cols = (l, 6) 
 	tableData = [[""]*cols]*rows 	
-	headings=["Map Name", "Author", "Stars", "Published", "Updated", "Status"]
+	headings=["Map Name", "Author", "Size", "Rating", "Published", "Updated", "Status"]
 	table=sg.Table(values=tableData[1:][:], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
-					col_widths=[25,20,8,12,12,20],
+					col_widths=[25,20,8,8,12,12,23],
 					justification='center',
-					num_rows=17,
-					key='-TABLE-',
+					num_rows=27,
+					key='mapsTable',
 					vertical_scroll_only=False,
-					font='Courier 10',
-					header_font='Courier 13',
-					tooltip='This is a table')
+					font='Courier 8',
+					header_font='Courier 11')
 
 	
 	# ------ Window Layout ------
@@ -622,15 +658,15 @@ def displayGUI():
 	filterFrameObjs=[filterFrameAuthor, filterFrameRating]
 	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
 
-	summaryLine=sg.Text("",size=(80,2))
+	summaryLine=sg.Text("",size=(80,2), key='summaryLine')
 	
-	startDownlaodBtn=sg.Button(button_text="Download", key='Download')
+	startDownloadBtn=sg.Button(button_text="Download", key='Download')
 	
-	fileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressFile')
-	allFileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressAllFiles')
-	progressBars=sg.Frame(title="Download Progress", title_location="n", element_justification="center", relief="groove", layout=[[fileProgressBar,allFileProgressBar]])
+	#fileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressFile')
+	#allFileProgressBar = sg.ProgressBar(1, orientation='h', size=(35, 10), border_width=3, pad=(2,2), key='progressAllFiles')
+	#progressBars=sg.Frame(title="Download Progress", title_location="n", element_justification="center", relief="groove", layout=[[fileProgressBar,allFileProgressBar]])
 	# Layout of GUI
-	layout = [ [settingFrame, filterFrame], [table], [summaryLine], [startDownlaodBtn], [progressBars] ]
+	layout = [ [settingFrame, filterFrame], [table], [summaryLine], [startDownloadBtn] ]
 
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
@@ -638,7 +674,7 @@ def displayGUI():
 
 	# Finalize the layout and then update populate the table / status lines otherwise won't update until user does something to trigger the event loop
 	window.Finalize()	
-	updateMapData(table,summaryLine)
+	updateMapData(window, summaryData)
 	
 	global windowGlobal
 	windowGlobal=window
@@ -648,11 +684,9 @@ def displayGUI():
 	from pprint import pprint
 	#pprint(vars(table))
 
-		
 	# ------ Event Loop ------
 	while True:
-		event, values = window.read()
-		#print(event, values)	
+		event, values = window.read()	
 		if event == sg.WIN_CLOSED:
 			break		
 		elif event == "Load":
@@ -668,18 +702,29 @@ def displayGUI():
 			except:
 				# TODO: This should probably be more specific than just reseting all to default
 				createDefaultSettings()
-		elif event == "Download":
-			print("here")
-			startDownload()
-		
-			updateMapData(table, summaryLine)
+			updateMapData(window, summaryData)	
+		elif event == "Author":
+			author=str(authorListCombobox.Get())
+			rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
 
+		elif event == "Download":
+			window.Disappear()
+			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalMapsToInstalled"])
+
+			updateMapData(window, summaryData)
+			window.Reappear()
+			
 	window.close()
 
-def updateMapData(table, summaryLine):
-	ratingFilter=getRatingFilter()
-	summaryData={"totalMapsToInstalled":0, "totalMapsAlreadyInstalled":0, "totalMapsSkippedRating":0, "totalMapsExcluded":0, "totalMapsFailed":0, "totalMaps":0 }
+def updateMapData(window, summaryData):
+	table=window['mapsTable']
+	summaryLine=window['summaryLine']
+
+	summaryData.clear()
+	summaryData.update({"totalMapsToInstalled":0, "totalMapsAlreadyInstalled":0, "totalMapsSkippedRating":0, "totalMapsExcluded":0, "totalMapsFailed":0, "totalMaps":0 })
 	
+	ratingFilter=getRatingFilter()
+
 	l=len(maps["MAP NAME"])
 	#Setup the map list table
 	rows, cols = (l, 6) 
@@ -701,15 +746,16 @@ def updateMapData(table, summaryLine):
 				summaryData["totalMapsAlreadyInstalled"]=summaryData["totalMapsAlreadyInstalled"]+1
 			else:
 				summaryData["totalMapsToInstalled"]=summaryData["totalMapsToInstalled"]+1			
-		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
+		tableData[i]=[maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i], status]
 		
 
-	summaryText="Total Maps: %d\tTotal To Download:%d\tAlready Installed:%d\nTotal Filtered:%d\tBy Rating:%d\tManually Exlcuded:%d" \
-		% (	summaryData["totalMaps"], summaryData["totalMapsAlreadyInstalled"], summaryData["totalMapsToInstalled"], \
+	summaryText="Total To Download:%d\tAlready Installed:%d\tTotal Maps: %d\nTotal Filtered:%d\tBy Rating:%d\tManually Exlcuded:%d" \
+		% (	summaryData["totalMapsToInstalled"], summaryData["totalMapsAlreadyInstalled"], summaryData["totalMaps"],  \
 			summaryData["totalMapsExcluded"]+summaryData["totalMapsSkippedRating"], summaryData["totalMapsSkippedRating"], summaryData["totalMapsExcluded"] )
 	
 	table.Update(values=tableData)
 	summaryLine.Update(value=summaryText)
+
 	return 
 				   				
 ###############################################################################
