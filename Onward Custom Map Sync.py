@@ -276,7 +276,7 @@ def reportMessage(message):
 		#if message.find("ERROR") != -1:
 		#	color="red"
 		print(message)
-		globalWindow["installLog"].update(message + "\n", text_color_for_value=color, append=True)
+		globalWindow["INSTALL_LOG"].update(message + "\n", text_color_for_value=color, append=True)
 	else:
 		print(message)
 	
@@ -361,7 +361,7 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 				
 			# Handle GUI Progress Bars				
 			if progressBarsGUI is not None:
-				progress_bar = progressBarsGUI['mapProgress']
+				progress_bar = progressBarsGUI['MAP_PROGRESS']
 				progress_bar.update_bar(bytesWritten, totalNumberOfBytes)
 				
 				# check to see if the cancel button was clicked and exit loop if clicked
@@ -447,10 +447,10 @@ def filterMap(mapID, mapName, mapAuthor, mapRating):
 	for f in authorFilter:
 		if f.text == mapAuthor:
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- Filtered by Author." %(mapName, mapID, mapAuthor))
-		if len(filterMsg) > 0:
-			filterMsg = filterMsg + " & AUTHOR"
-		else:
-			filterMsg = "FILTERED BY: AUTHOR"
+			if len(filterMsg) > 0:
+				filterMsg = filterMsg + " & AUTHOR"
+			else:
+				filterMsg = "FILTERED BY: AUTHOR"
 
 	ratingFilter=getXMLRatingFilter()
 	if rating < ratingFilter:
@@ -519,7 +519,14 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	calculatedZipHash = getHash(downloadName)
 	if zipHash != calculatedZipHash:
 		reportMessage("***ERROR***: Zip file hash incorrect. Expecting %s but got %s" % (zipHash, calculatedZipHash))
-		os.remove(downloadName)			
+	# Sucessfully downloaded and extracted map so delete zip file
+		delMap = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Delete_Map_Zips_After_Install')
+		try:
+			if delMap[0].text.upper() == "TRUE":
+				os.remove(downloadName)	
+		except:
+			pass		
+	
 		return False
 	
 	# Unzip file
@@ -597,12 +604,12 @@ def startDownload(progressBarsGUI=False, totalMapsToDownload=0):
 	#	downloading and create the progress bars window
 	window=None
 
-	mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='mapProgressText')
-	mapProgress=sg.ProgressBar(1, orientation='h', size=(54, 20), key='mapProgress')
-	allProgressText=sg.Text('Total Progress: Map 1 of %d' % totalMapsToDownload, key='allProgressText')
-	allProgress=sg.ProgressBar(l, orientation='h', size=(54, 20), key='allProgress')
+	mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='MAP_PROGRESS_TEXT')
+	mapProgress=sg.ProgressBar(1, orientation='h', size=(54, 20), key='MAP_PROGRESS')
+	allProgressText=sg.Text('Total Progress: Map 1 of %d' % totalMapsToDownload, key='ALL_PROGRESS_TEXT')
+	allProgress=sg.ProgressBar(l, orientation='h', size=(54, 20), key='ALL_PROGRESS')
 
-	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font="monospace 7", key='installLog')
+	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font="monospace 7", key='INSTALL_LOG')
 	installLogObjs=[[installLog]]
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
@@ -709,52 +716,77 @@ def displayGUI():
 					col_widths=[30,25,45, 13,13,13,13],
 					justification='center',
 					num_rows=20,
-					key='mapsTable',
+					key='MAPS_TABLE',
 					vertical_scroll_only=False,
 					font='Courier 7',
 					header_font='Courier 9')
 
 	
-	# ------ Window Layout ------
-	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key='Load'), 		\
-							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key='Save'), 		\
-							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key='Default')	\
+	###########################################################################
+	# Settings objects
+	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key="LOAD"), 		\
+							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key="SAVE"), 		\
+							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key="DEFAULT")	\
 					]
-	settingFrame=sg.Frame(title="Map Filters", title_location="n", element_justification="center", relief="groove", layout=[settingsObjs]) 
+	settingFrame=sg.Frame(title="Map Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(0,0,0,4), layout=[settingsObjs]) 
 
-	# Setup Author Filte
-	authorList=list(set( maps["AUTHOR"])) # Get unique lists of Authors
-	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), change_submits=True, default_value=authorList[0], key="AuthorSelected")
+	###########################################################################
+	# Filter Selected
+	includeBtn=sg.Button(button_text="Include", size=(7,1), font='Courier 8', key='INCLUDE_SELECTED')
+	excludeBtn=sg.Button(button_text="Exclude", size=(7,1), font='Courier 8', key='EXCLUDE_SELECTED')		
+	seletedFilterObjs=[includeBtn, excludeBtn]
+	filterFrameSelected=sg.Frame(title="Selected Maps", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[seletedFilterObjs]) 
+	
+	###########################################################################
+	# Author Filter
+	authorList=list(set( maps["AUTHOR"])) 	# Get unique lists of Authors
+	authorList.sort(key=str.casefold)	 	# Put authors in ABC order
+	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(22,1), font='Courier 8', change_submits=True, default_value=authorList[0], key="AUTHOR_SELECTED")
 	# Since we need to keep the FILTER/CLEAR in sync we need to check if the default authtor is currently being filtered or not
 	btnText="EXCLUDE"
 	if processXMLFilter("EXISTS", "Exlude_Map_Author", authorList[0]):
 		btnText="INCLUDE"
-	authorBtn=sg.Button(button_text=btnText, size=(7,1), key='Author')	
+	authorBtn=sg.Button(button_text=btnText, size=(7,1), font='Courier 8', key='AUTHOR')	
 	authorObjs=[authorListCombobox, authorBtn]
-	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", layout=[authorObjs]) 
-	
-	#Setup Rating Filter
+	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[authorObjs]) 
+
+	###########################################################################	
+	# Rating Filter
 	ratingFilter=getXMLRatingFilter()
 	
 	ratingList=["All", "1 Star", "2 Star", "3 Star", "4 Star", "5 Star"]
-	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(10,1), default_value=ratingList[ratingFilter])
-	ratingBtn=sg.Button(button_text="Apply", size=(7,1), key='Rating')		
+	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(8,1), default_value=ratingList[ratingFilter], font='Courier 10',)
+	ratingBtn=sg.Button(button_text="Apply", size=(7,1), font='Courier 8', key='RATING')		
 	ratingObjs=[ratingListCombobox, ratingBtn]
-	filterFrameRating=sg.Frame(title="Minimum Star Rating", title_location="n", element_justification="center", relief="groove", layout=[ratingObjs]) 
+	filterFrameRating=sg.Frame(title="Minimum Star Rating", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[ratingObjs]) 
 	
-	filterFrameObjs=[settingFrame, filterFrameAuthor, filterFrameRating]
-	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", layout=[filterFrameObjs]) 
+	###########################################################################	
+	# Filters Layout
+	filterFrameObjs=[settingFrame, filterFrameSelected, filterFrameAuthor, filterFrameRating]
+	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", pad=(1,1,0,4),layout=[filterFrameObjs]) 
 
-	summaryLine=sg.Text("",size=(80,2), key='summaryLine')	
-	installLog=sg.MLine(default_text='', size=(120, 10), font='monospace 8', key='installLog')
+	###########################################################################
+	# Summary
+	summaryLine=sg.Text("",size=(80,2), key='SUMMARY_LINE')	
+	installLog=sg.MLine(default_text='', size=(120, 10), font='monospace 8', key='INSTALL_LOG')
 	installLogObjs=[[installLog], [summaryLine]]
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
-	startDownloadBtn=sg.Button(button_text="Download", key='Download')
-	taskSchedBtn=sg.Button(button_text="Schedule", key='Schedule')
+	###########################################################################
+	# Bottom Buttons
+	startDownloadBtn=sg.Button(button_text="Download", key='DOWNLOAD')
 	
+	
+	SchedList=["Use All Filters", "Only Update Existing Maps", "Update Existing & Download New Releases"]
+	SchedTime=["Daily", "Weekly"]
+	SchedListCombobox=sg.Combo(SchedList, readonly=True, visible=True, size=(30,1), default_value=SchedList[0], font='Courier 10')
+	taskSchedBtn=sg.Button(button_text="Schedule", key='SCHEDULE TASK')
+	schedObjs=[[SchedListCombobox, taskSchedBtn]]
+	taskSchedFrame=sg.Frame(title="Add Entry Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
+		
+	###########################################################################
 	# Layout of GUI
-	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, taskSchedBtn]	 ]
+	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, taskSchedFrame]	 ]
 
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
@@ -775,29 +807,36 @@ def displayGUI():
 
 	# ------ Event Loop ------
 	while True:
-		event, values = window.read()	
+		event, values = window.read()
 		if event == sg.WIN_CLOSED:
 			break		
-		elif event == "Load":
+		elif event == "LOAD":
 			loadSettings()
-		elif event == "Save":
+		elif event == "SAVE":
 			saveSettings()
-		elif event == "Default":
-			createDefaultSettings()			
-		elif event == "Rating":
+		elif event == "DEFAULT":
+			createDefaultSettings()	
+		elif event == "INCLUDE_SELECTED":
+			for i in table.SelectedRows:
+				processXMLFilter("REMOVE", "Exlude_Map_ID", maps["ID"][i])
+		elif event == "EXCLUDE_SELECTED":
+			for i in table.SelectedRows:		
+				processXMLFilter("ADD", "Exlude_Map_ID", maps["ID"][i])
+		elif event == "AUTHOR":
+			author=str(authorListCombobox.Get())
+			if processXMLFilter("EXISTS", "Exlude_Map_Author", author) == False:
+				processXMLFilter("ADD", "Exlude_Map_Author", author)
+			else:
+				processXMLFilter("REMOVE", "Exlude_Map_Author", author)								
+		elif event == "RATING":
 			rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Ratings_Filter')
 			try:
 				rf[0].text=str(ratingList.index(ratingListCombobox.Get()))
 			except:
 				# TODO: This should probably be more specific than just reseting all to default
 				createDefaultSettings()	
-		elif event == "Author":
-			author=str(authorListCombobox.Get())
-			if processXMLFilter("EXISTS", "Exlude_Map_Author", author) == False:
-				processXMLFilter("ADD", "Exlude_Map_Author", author)
-			else:
-				processXMLFilter("REMOVE", "Exlude_Map_Author", author)				
-		elif event == "Download":
+		
+		elif event == "DOWNLOAD":
 			window.Disappear()
 			startDownload(progressBarsGUI=True, totalMapsToDownload=summaryData["totalToInstall"])
 			#updateMapData(window, summaryData)
@@ -810,9 +849,9 @@ def displayGUI():
 # Update the GUI table and summary lines
 ###############################################################################			
 def updateMapData(window, summaryData):
-	table=window['mapsTable']
-	summaryLine=window['summaryLine']
-	installLog=window['installLog']
+	table=window['MAPS_TABLE']
+	summaryLine=window['SUMMARY_LINE']
+	installLog=window['INSTALL_LOG']
 	
 	summaryData.clear()
 	summaryData.update({	"totalToInstall":0, 	"totalAlreadyInstalled":0, 								\
@@ -852,7 +891,7 @@ def updateMapData(window, summaryData):
 			status=filterStatus
 			summaryData["totalToInstall"]=summaryData["totalToInstall"]-1
 			summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1
-			
+		
 		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], status,  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
 		
 
@@ -864,11 +903,11 @@ def updateMapData(window, summaryData):
 	summaryLine.Update(value=summaryText)
 
 	# Update the button text on the Author Remove to reflect the current seletion
-	author=str(window["AuthorSelected"].Get())
+	author=str(window["AUTHOR_SELECTED"].Get())
 	if processXMLFilter("EXISTS", "Exlude_Map_Author", author) == True:
-		window["Author"].update(text="INCLUDE")	
+		window["AUTHOR"].update(text="INCLUDE")	
 	else:
-		window["Author"].update(text="EXCLUDE")		
+		window["AUTHOR"].update(text="EXCLUDE")		
 
 ###############################################################################
 # Add/Remove or Check if a map filter exists in the XML data
@@ -885,7 +924,7 @@ def processXMLFilter(method, tag, text=None):
 	if method=="ADD":
 		e=etree.Element(tag)
 		e.text=str(text)
-		e.tail = '\n'	# Keeps the formatting nice in the XML file
+		#e.tail = '\n'	# Keeps the formatting nice in the XML file
 		rf = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters')
 		rf[0].insert(-1,e)	# Add at the end of list TODO: Wrap this in a try perhaps?
 		
@@ -957,7 +996,7 @@ if __name__ == "__main__":
 	except:
 		reportMessage("***ERROR*** Can't validate version of Maps List.")
 		exit()
-		
+
 
 	# Display the GUI or if -noGUI specified just start downloading
 	if args.noGUI is not None:
