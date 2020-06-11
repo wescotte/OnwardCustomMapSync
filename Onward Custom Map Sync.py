@@ -273,7 +273,7 @@ def createTask(timeToRun):
 # -quiet means log to Ownard Custom Map Sync.log
 # Otherwise display in the status log 
 ###############################################################################	
-def reportMessage(message):
+def reportMessage(message, logToFile=True):
 
 	global globalWindow
 	global errorMsgBuffer
@@ -281,7 +281,7 @@ def reportMessage(message):
 	global logFileGlobal
 	
 	# Output to log file
-	if logFileGlobal is not None:
+	if logFileGlobal is not None and logToFile is True:
 		logFileGlobal.write(datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + ": " + message + "\n")
 		
 	if args.noGUI is False:
@@ -356,9 +356,9 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 	# End While
 	
 	if not quiet:
-		reportMessage("Downloading...")
-		reportMessage("From:" + url_origin)
-		reportMessage("To:" + localFileName)
+		reportMessage("Downloading...", False)
+		reportMessage("From:" + url_origin, False)
+		reportMessage("To:" + localFileName, False)
 	
 	f = open(localFileName, "wb")
 	try:
@@ -374,9 +374,10 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 			#Google Drive doesn't seem to properly report the file size during download so we just store it for each zip file
 			#pbar = tqdm.tqdm(total=total, unit="B", unit_scale=True)
 			pbar = tqdm.tqdm(total=totalNumberOfBytes, unit="B", unit_scale=True)
-			
+		
 		#t_start = time.time()
 		bytesWritten=0
+					
 		for chunk in res.iter_content(chunk_size=CHUNK_SIZE):
 			bytesWritten=bytesWritten+len(chunk)
 			f.write(chunk)
@@ -390,11 +391,9 @@ def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBa
 				
 				# check to see if the cancel button was clicked and exit loop if clicked
 				event, values = progressBarsGUI.read(timeout=0)
-				if event == 'Cancel' or event == None:
-					progressBarsGUI.close()
-					global globalWindow
-					globalWindow=None
-					return False					
+				if event == 'Cancel' or sg.WIN_CLOSED or event == None:
+					# Trigger a user abort
+					return None					
 
 		""" Disabled throttling for now				
 			if speed is not None:
@@ -451,16 +450,7 @@ def get_url_from_gdrive_confirmation(contents):
 ###############################################################################
 def filterMap(mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 	filterMsg = ""
-	
-	if args.justNew is True:
-		try:
-			runDate = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Last_Date_Run')
-			lastCheckDate=date(runDate[0].text)
-		except:
-			lastCheckDate=datetime.date.today()
-		if date(mapReleaseDate) <= lastCheckDate:
-			return "FILTERED BY: NOT A NEW RELEASE"
-	
+
 	# mapRating going to be a string so convert it to an integer
 	try:
 		rating=int(mapRating)
@@ -471,31 +461,46 @@ def filterMap(mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 		filterMsg="UNAVAILBLE FOR D/L AT AUTHROR'S REQUEST"
 		return filterMsg
 		
+	if args.justNew is True:
+		try:
+			runDate = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Last_Date_Run')
+			lastCheckDate=datetime.datetime.strptime(runDate[0].text, "%m/%d/%Y").date()
+		except:
+			lastCheckDate=datetime.date.today()
+			
+		releaseDate=datetime.datetime.strptime(mapReleaseDate, "%m/%d/%Y").date()
+		if releaseDate <= lastCheckDate:
+			filterMsg = addFilterMsg(filterMsg, "NOT A NEW RELEASE")
+		
 	IDFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_ID')
 	for f in IDFilter:
 		if f.text == mapID:
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- This map is marked not to install." %(mapName, mapID, mapAuthor))
-			filterMsg = "FILTERED BY: MAP NAME"
+			filterMsg = addFilterMsg(filterMsg, "MAP NAME")
 			
 	authorFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
 	for f in authorFilter:
 		if f.text == mapAuthor:
 			reportMessage("***SKIPPING MAP*** \"%s\" ID: %s by %s ---- Filtered by Author." %(mapName, mapID, mapAuthor))
-			if len(filterMsg) > 0:
-				filterMsg = filterMsg + " & AUTHOR"
-			else:
-				filterMsg = "FILTERED BY: AUTHOR"
+			filterMsg = addFilterMsg(filterMsg, "AUTHOR")
 
 	ratingFilter=getXMLRatingFilter()
 	if rating < ratingFilter:
-		if len(filterMsg) > 0:
-			filterMsg = filterMsg + " & RATING"
-		else:
-			filterMsg = "FILTERED BY: RATING"
+		filterMsg = addFilterMsg(filterMsg, "RATING")
 			
 	return filterMsg
 	
-
+###############################################################################
+# Combine filter messages into a single string
+###############################################################################	
+def addFilterMsg(filterMsg, newMessage):
+	if len(filterMsg) > 0:
+		filterMsg = filterMsg + " & " + newMessage
+	else:
+		filterMsg = "FILTERED BY: " + newMessage
+	
+	return filterMsg	
+	
 ###############################################################################
 # Verify if we already have the map installed
 # -Check if a mapID.info & mapID.content already exist in our custom map folder
@@ -530,18 +535,15 @@ def needMap(mapID, mapHash):
 	
 ###############################################################################
 # Download a mapID.zip file and verify the MD5 sum matches
+# Returns True/False on success/failure but also can return None if the user 
+# 	decides to abort the download
 ###############################################################################	
 def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGUI=None):
-	# Set this to True so we keep track of the last time we actually downloaded content
-	global downloadedAnything
-	downloadedAnything=True
-	
 	# Download the Google Drive file
 	downloadName=onwardPath + mapID + ".zip"
 	
 	if "DRIVE.GOOGLE.COM" in mapDownloadURL.upper():
-		if downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI) == False:
-			return False
+		return downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI)
 	elif "KOIZ" in mapDownloadURL.upper():
 		reportMessage("***INFO*** Koiz doesn't want his maps hosted anywhere except official Onward servers... Please ask him to reconsider as this tool can't access those files directly.")
 		return False
@@ -553,11 +555,8 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	calculatedZipHash = getHash(downloadName)
 	if zipHash != calculatedZipHash:
 		reportMessage("***ERROR***: Zip file hash incorrect. Expecting %s but got %s" % (zipHash, calculatedZipHash))
-	# Sucessfully downloaded and extracted map so delete zip file
-		delMap = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Delete_Map_Zips_After_Install')
 		try:
-			if delMap[0].text.upper() == "TRUE":
-				os.remove(downloadName)	
+			os.remove(downloadName)	
 		except:
 			pass		
 	
@@ -664,22 +663,19 @@ def startDownload(progressBarsGUI=False):
 		
 		# We set the global window to the current progress bar window so the function reportMessage() is displaying messages to
 		#	the currently active window. Once downloads finish or are aborted we switch it back to the main window.
-		globalWindow=window 
-
+		globalWindow=window 		
 	
 	# Traverse the list of maps		
 	#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
 	l=len(maps["MAP NAME"])
 	installCount=0
+	abortedByUser=False
 	for i in range(0,l):			
 		# Update the progress bar if in GUI mode
 		if progressBarsGUI is not False:
-			if window is None:  # User has hit cancel or the window terminated permaturely somehow..
-				break	
 			# check to see if the cancel button was clicked and exit loop if clicked
 			event, values = window.read(timeout=0)
-			if event == 'Cancel' or event == None:
-				globalWindow=oldglobalWindow
+			if event == 'Cancel' or sg.WIN_CLOSED or event == None:			
 				break		
 				
 			mapProgressText.Update(value='Downloading Map: %s' % maps["MAP NAME"][i])
@@ -688,27 +684,35 @@ def startDownload(progressBarsGUI=False):
 			
 		if maps["MISC FIELDS"][i] in ["REINSTALL", "DOWNLOAD", "UPDATE"]:
 			reportMessage("***DOWNLOADING*** MAP %d of %d: NAME: %s by %s size:%smb" % (installCount+1, summaryData["totalToInstall"], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i]))
-			if getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=False, progressBarsGUI=window) is True:
+			mapStatus=getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=progressBarsGUI, progressBarsGUI=window)
+			if mapStatus is True:
 					installCount = installCount + 1
-					reportMessage("\n***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s\n" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
+					reportMessage("***INSTALLED***       \"%s\" by %s\tID:%s\tMap Star Rating: %s" %(maps["MAP NAME"][i].ljust(30), maps["AUTHOR"][i].ljust(15), maps["ID"][i], maps["RATING"][i]))
+			elif mapStatus is None:
+				abortedByUser=True
+				break
 			else:
-					summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
-					reportMessage("\n***ERROR*** Map    \"%s\" ID:%s did not have the expected hash value... This map will not be installed" %(maps["MAP NAME"][i], maps["ID"][i]))	
+				summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
 		else:
 			reportMessage("***INFO*** Skipped installing %s by %s --- %s" % (maps["MAP NAME"][i], maps["AUTHOR"][i], maps["MISC FIELDS"][i]))
-			
-	reportMessage("\n\n***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" \
+	
+	# If we completed a full loop and was not aborted by the user then we need to update the last run date
+	if abortedByUser is True:
+		reportMessage("***INFO*** Aborted by user")
+	else:
+		updateLastRunDate()	
+	reportMessage("***INFO*** Maps Installed: %s\tAlready Installed: %s\tSkipped-Low Rating: %s\tSkipped-Custom Filter: %s\tInstall Failed: %s\tTotal Maps: %s" \
 		% (installCount, summaryData["totalAlreadyInstalled"], summaryData["totalSkippedRating"], summaryData["totalExcluded"], summaryData["totalMapsFailed"], l))
 
 	if progressBarsGUI is False:
 		os.system("pause")
 	else:
 		if window != None:
-			globalWindow=oldglobalWindow	# Switch back to the main UI window so reportMessage() is displaying in the correct place
-			try:
-				globalWindow["INSTALL_LOG"].update(installLog.get(), append=False)	# Move the install log to the main window
-			except:
-				pass
+			# Switch from progress bars to original GUI and copy install log 
+			globalWindow=oldglobalWindow
+			msgs=installLog.get().split("\n")
+			for m in msgs:
+				reportMessage(m, False)
 			window.close()
 
 
@@ -739,15 +743,20 @@ def displayGUI():
 					font='Courier 7',
 					header_font='Courier 9')
 
-	
-	###########################################################################
-	# Settings objects
-	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key="LOAD"), 		\
-							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key="SAVE"), 		\
-							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key="DEFAULT")	\
-					]
-	settingFrame=sg.Frame(title="Map Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(0,0,0,4), layout=[settingsObjs]) 
 
+	
+
+	###########################################################################
+	# Quick Filters
+	quickFiltersList=["Use All Filters", "Only Download Updates", "Download Updates & New Releases"]
+	qfDefault=0
+	if args.justUpdate is True and args.justNew is False:
+		qfDefault=1
+	elif args.justUpdate is False and args.justNew is True:
+		qfDefault=2
+	quickFiltersCombobox=sg.Combo(quickFiltersList, readonly=True, visible=True, size=(32,1), default_value=quickFiltersList[qfDefault], font='Courier 8', change_submits=True, key="QF_SELECTED")
+	quickFiltersFrame=sg.Frame(title="Quick Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[[quickFiltersCombobox]]) 	
+	
 	###########################################################################
 	# Filter Selected
 	includeBtn=sg.Button(button_text="Include", size=(7,1), font='Courier 8', key='INCLUDE_SELECTED')
@@ -759,7 +768,7 @@ def displayGUI():
 	# Author Filter
 	authorList=list(set( maps["AUTHOR"])) 	# Get unique lists of Authors
 	authorList.sort(key=str.casefold)	 	# Put authors in ABC order
-	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(22,1), font='Courier 8', change_submits=True, default_value=authorList[0], key="AUTHOR_SELECTED")
+	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), font='Courier 8', change_submits=True, default_value=authorList[0], key="AUTHOR_SELECTED")
 	# Since we need to keep the FILTER/CLEAR in sync we need to check if the default authtor is currently being filtered or not
 	btnText="EXCLUDE"
 	if processXMLFilter("EXISTS", "Exlude_Map_Author", authorList[0]):
@@ -776,11 +785,11 @@ def displayGUI():
 	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(8,1), default_value=ratingList[ratingFilter], font='Courier 10',)
 	ratingBtn=sg.Button(button_text="Apply", size=(7,1), font='Courier 8', key='RATING')		
 	ratingObjs=[ratingListCombobox, ratingBtn]
-	filterFrameRating=sg.Frame(title="Minimum Star Rating", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[ratingObjs]) 
+	filterFrameRating=sg.Frame(title="Min Star Rating", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[ratingObjs]) 
 	
 	###########################################################################	
 	# Filters Layout
-	filterFrameObjs=[settingFrame, filterFrameSelected, filterFrameAuthor, filterFrameRating]
+	filterFrameObjs=[quickFiltersFrame, filterFrameSelected, filterFrameAuthor, filterFrameRating]
 	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", pad=(1,1,0,4),layout=[filterFrameObjs]) 
 
 	###########################################################################
@@ -791,19 +800,25 @@ def displayGUI():
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
 	###########################################################################
-	# Bottom Buttons
+	# Bottom Row
 	startDownloadBtn=sg.Button(button_text="Download", key='DOWNLOAD')
+
+	###########################################################################
+	# Settings objects
+	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key="LOAD"), 		\
+							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key="SAVE"), 		\
+							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key="DEFAULT")	\
+					]
+	settingFrame=sg.Frame(title="Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(0,0,0,4), layout=[settingsObjs]) 
 	
-	
-	SchedList=["Use Current Filters", "Only Update Existing Maps", "Update Existing & Download New Releases"]
-	SchedListCombobox=sg.Combo(SchedList, readonly=True, visible=True, size=(30,1), default_value=SchedList[0], font='Courier 10')
+	SchedListCombobox=sg.Combo(quickFiltersList, readonly=True, visible=True, size=(30,1), default_value=quickFiltersList[0], font='Courier 10')
 	taskSchedBtn=sg.Button(button_text="Schedule", key='Add to Scheduler')
 	schedObjs=[[SchedListCombobox, taskSchedBtn]]
 	taskSchedFrame=sg.Frame(title="Automaticall run daily via Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
 		
 	###########################################################################
 	# Layout of GUI
-	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, taskSchedFrame]	 ]
+	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, settingFrame, taskSchedFrame]	 ]
 
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
@@ -850,6 +865,17 @@ def displayGUI():
 			saveSettings()
 		elif event == "DEFAULT":
 			createDefaultSettings()	
+		elif event == "QF_SELECTED":
+			qfSelected=str(quickFiltersCombobox.Get())
+			if qfSelected == quickFiltersList[0]:
+				args.justUpdate=False
+				args.justNew=False
+			elif qfSelected == quickFiltersList[1]:
+				args.justUpdate=True
+				args.justNew=False
+			elif qfSelected == quickFiltersList[2]:
+				args.justUpdate=True
+				args.justNew=True
 		elif event == "INCLUDE_SELECTED":
 			for i in table.SelectedRows:
 				processXMLFilter("REMOVE", "Exlude_Map_ID", maps["ID"][i])
@@ -931,17 +957,23 @@ def processFilters():
 		
 		needStatus=needMap(maps["ID"][i], maps["INFO HASH"][i])
 		filterStatus=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i])
-		# If a map is already installed flag to skip it
+		
+		# If a map is already installed flag to skip it		
 		if needStatus == "INSTALLED":
 			summaryData["totalAlreadyInstalled"]=summaryData["totalAlreadyInstalled"]+1
 			status=needStatus
 		# If we use the -justUpdate flag and an update is available download it regardless of any filters.
 		# Otherwise only download if we need it and there are no filters.
 		elif (needStatus == "UPDATE" and args.justUpdate is True) or (needStatus in ["UPDATE", "REINSTALL", "DOWNLOAD"] and filterStatus == "" and args.justUpdate is False):
-			summaryData["totalToInstall"]=summaryData["totalToInstall"]+1	
+			summaryData["totalToInstall"]=summaryData["totalToInstall"]+1
 			status=needStatus
 		else:
-			status=filterStatus 
+			# If we need the map but we have the justUpdate flag enabled then it's possible there are no filters and thus we should upate
+			# the status to reflect his special case
+			if needStatus in ["DOWNLOAD", "REINSTALL"] and filterStatus == "":
+				status = "FILTERED BY: ONLY INSTALL UPDATES"
+			else:
+				status=filterStatus 
 			if status.find("RATING") != -1:
 				summaryData["totalSkippedRating"]=summaryData["totalSkippedRating"]+1
 			elif status.find("AUTHOR") != -1:
@@ -955,9 +987,11 @@ def processFilters():
 		# Special case where we don't have a map installed but rating is -1 meaning author doesn't want distribution
 		if status==needStatus and filterStatus.find("UNAVAILBLE") != -1:
 			status=filterStatus
-			summaryData["totalToInstall"]=summaryData["totalToInstall"]-1
+			#summaryData["totalToInstall"]=summaryData["totalToInstall"]-1
 			summaryData["totalSkippedName"]=summaryData["totalSkippedName"]+1
 		
+		# Repurposing the "MISC FIELDS" columns for status becuase after we load the intial data
+		# we don't need/want that data anymore anyway and it's just easiser this way
 		maps["MISC FIELDS"][i]=status
 		
 	return summaryData
@@ -1015,10 +1049,10 @@ def validateMapList():
 	try:
 		downloadGoogleDriveFile(filenameMapList, mapListGoogleURL, 0, quiet=True)
 	except AssertionError as error:
-		reportMessage("\n***ERROR*** Unable to obtain the list of custom maps... Please try again later.\n")	
+		reportMessage("***ERROR*** Unable to obtain the list of custom maps... Please try again later.")	
 		valid=False
 
-	reportMessage("***INFO*** List downloaded sucessfully...\n")
+	reportMessage("***INFO*** List downloaded sucessfully...")
 
 	# Read the maps list from the file into a Dictionary
 	f = open(filenameMapList)
@@ -1040,7 +1074,7 @@ def validateMapList():
 	# Make sure there is some data in the file
 	l=len(maps["MAP NAME"])
 	if l is None or l < 1:	
-		reportMessage("\n***ERROR*** Map list downloaded but is empty... Try again later.\n")	
+		reportMessage("***ERROR*** Map list downloaded but is empty... Try again later.")	
 		valid=False		
 	
 	# Verify the version of the map data works wiht this version of the application
@@ -1077,7 +1111,7 @@ if __name__ == "__main__":
 			import ctypes
 		whnd = ctypes.windll.kernel32.GetConsoleWindow()
 		if whnd != 0:
-			ctypes.windll.user32.ShowWindow(whnd, 0)
+			#ctypes.windll.user32.ShowWindow(whnd, 0)
 		# if you wanted to close the handles...
 		#ctypes.windll.kernel32.CloseHandle(whnd)			
 			pass
@@ -1140,11 +1174,6 @@ if __name__ == "__main__":
 	except:
 		pass
 		
-	
-	# If we downloaded anything this session update the last run date
-	# global downloadedAnything
-	if downloadedAnything is True:
-		updateLastRunDate()
 
 	# If the user happens to be running this from command prompt 
 	if args.noGUI is False:
@@ -1152,7 +1181,7 @@ if __name__ == "__main__":
 			import ctypes
 		whnd = ctypes.windll.kernel32.GetConsoleWindow()
 		if whnd != 0:
-			ctypes.windll.user32.ShowWindow(whnd, 1)
+			#ctypes.windll.user32.ShowWindow(whnd, 1)
 			pass
 
 	# Close the log file on exist
