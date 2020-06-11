@@ -21,7 +21,7 @@ import glob
 import csv
 import hashlib
 import datetime 
-
+import math
 
 filenameMapList = 'mapList.csv'
 newfilenameMapList = 'newMapList.csv'
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 		i=getIndex(mapList, ID)
 		
 		zipHash=getHash(zipFN)
-		zipSize=os.path.getsize(zipFN)/(1024*1024)
+		zipSize=int(math.ceil(os.path.getsize(zipFN)/(1024*1024)))
 
 		today=datetime.date.today().strftime("%m/%d/%Y")
 		if i == -1:
