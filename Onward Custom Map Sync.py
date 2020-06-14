@@ -514,7 +514,7 @@ def addFilterMsg(filterMsg, newMessage):
 def needMap(mapID, mapHash):
 	infoFile=onwardPath + mapFolder + mapID + ".info"
 	contentFile=onwardPath + mapFolder + mapID + ".content"  
-	
+
 	# If .content file doesn't exist you need to download the map
 	my_file = Path(contentFile)
 	if my_file.is_file() is False:
@@ -542,19 +542,25 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	# Download the Google Drive file
 	downloadName=onwardPath + mapID + ".zip"
 	
+	gotMap=True
 	if "DRIVE.GOOGLE.COM" in mapDownloadURL.upper():
-		return downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI)
+		gotMap=downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI)
 	elif "KOIZ" in mapDownloadURL.upper():
 		reportMessage("***INFO*** Koiz doesn't want his maps hosted anywhere except official Onward servers... Please ask him to reconsider as this tool can't access those files directly.")
 		return False
 	else:
 		reportMessage("***ERROR*** Don't know how to download URL: %s" % mapDownloadURL)
 		return False
+	
+	# If download failed/aborted then no reason to unzip or check hashes
+	if gotMap is False or gotMap is None:
+		return gotMap
 		
 	# validate hash
 	calculatedZipHash = getHash(downloadName)
 	if zipHash != calculatedZipHash:
 		reportMessage("***ERROR***: Zip file hash incorrect. Expecting %s but got %s" % (zipHash, calculatedZipHash))
+
 		try:
 			os.remove(downloadName)	
 		except:
@@ -566,7 +572,7 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	with ZipFile(downloadName, 'r') as zipObj:
 		# Extract all the contents of zip file in current directory
 		try:
-			zipObj.extractall(onwardPath)	
+			zipObj.extractall(onwardPath)
 		except:
 			zipObj.close()
 			os.remove(downloadName)
@@ -583,7 +589,7 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	except:
 		pass
 		
-	return True
+	return gotMap
 
 
 ###############################################################################
@@ -957,7 +963,7 @@ def processFilters():
 		
 		needStatus=needMap(maps["ID"][i], maps["INFO HASH"][i])
 		filterStatus=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i])
-		
+			
 		# If a map is already installed flag to skip it		
 		if needStatus == "INSTALLED":
 			summaryData["totalAlreadyInstalled"]=summaryData["totalAlreadyInstalled"]+1
