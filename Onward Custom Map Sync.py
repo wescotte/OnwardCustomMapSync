@@ -135,7 +135,10 @@ def updateLastRunDate():
 # Add an entry for this program to run automatically via 
 # the Windows Task Scheduler
 ###############################################################################
-def createTask(timeToRun):
+def createTask(h,m):
+	reportMessage("Test message: %s %s" % (h,m))
+	return
+	
 	print("Feature not implimented yet...")
 	exit()
 	
@@ -304,7 +307,7 @@ def reportMessage(message, logToFile=True):
 						log.update(m + "\n", append=True)
 					errorMsgBuffer = None
 				
-				log.update(message + "\n", text_color_for_value=color, append=True)
+				log.update(message + "\n", text_color_for_value=color, append=True, autoscroll=True)
 			except:
 				if errorMsgBuffer is None:
 					errorMsgBuffer = []
@@ -735,8 +738,6 @@ def displayGUI():
 	# GUI Objects
 	###########################################################################	
 	# Create table object
-	#rows, cols = (l, 6) 
-	#tableData = [[""]*cols]*rows 	
 	headings=["Map Name", "Author", "Status", "Size", "Rating", "Published", "Updated"]
 	table=sg.Table(values=[], headings=headings, max_col_width=55,
 					auto_size_columns=False,
@@ -749,8 +750,6 @@ def displayGUI():
 					font='Courier 7',
 					header_font='Courier 9')
 
-
-	
 
 	###########################################################################
 	# Quick Filters
@@ -817,10 +816,13 @@ def displayGUI():
 					]
 	settingFrame=sg.Frame(title="Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(0,0,0,4), layout=[settingsObjs]) 
 	
-	SchedListCombobox=sg.Combo(quickFiltersList, readonly=True, visible=True, size=(30,1), default_value=quickFiltersList[0], font='Courier 10')
-	taskSchedBtn=sg.Button(button_text="Schedule", key='Add to Scheduler')
-	schedObjs=[[SchedListCombobox, taskSchedBtn]]
-	taskSchedFrame=sg.Frame(title="Automaticall run daily via Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
+	SchedHourText=sg.Text('Hour:')
+	SchedHour=sg.Combo(list(range(0,23)), readonly=True, visible=True, size=(2,1), default_value="23", font='Courier 10', key='SCHEDULE_HOUR')
+	SchedMinText=sg.Text('Min:')	
+	SchedMin=sg.Combo(["00","15","30","45"], readonly=True, visible=True, size=(2,1), default_value="30", font='Courier 10',  key='SCHEDULE_MIN')	
+	taskSchedBtn=sg.Button(button_text="Schedule Task", key='SCHEDULE')
+	schedObjs=[[SchedHourText, SchedHour, SchedMinText, SchedMin, taskSchedBtn]]
+	taskSchedFrame=sg.Frame(title="Run Daily via Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
 		
 	###########################################################################
 	# Layout of GUI
@@ -854,7 +856,10 @@ def displayGUI():
 	
 	#from pprint import pprint
 	#pprint(vars(table))
-
+	
+	# Since some messages were reported before the GUI was created we need to flush the buffer to the screen
+	reportMessage("", False)
+	
 	# ------ Event Loop ------
 	while True:
 		event, values = window.read()
@@ -901,7 +906,8 @@ def displayGUI():
 			except:
 				# TODO: This should probably be more specific than just reseting all to default
 				createDefaultSettings()	
-		
+		elif event == "SCHEDULE":
+			createTask(SchedHour.Get(), SchedMin.Get())
 		elif event == "DOWNLOAD":
 			window.Disappear()
 			startDownload(progressBarsGUI=True)
@@ -928,10 +934,9 @@ def updateMapData(window, summaryData):
 	for i in range(0,l):
 		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], maps["MISC FIELDS"][i],  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
 		
-
-	summaryText="Total To Download:%d\tAlready Installed:%d\tTotal Maps: %d\nBy Rating:%d\tBy Author:%d\tBy Name:%d\tTotal Exlcuded:%d" \
-		% (	summaryData["totalToInstall"], summaryData["totalAlreadyInstalled"], summaryData["totalMaps"],  \
-			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"] ,summaryData["totalExcluded"] )
+	summaryText='Total To Install:{:<10}Currently Installed:{:<5}Total Maps:{:<5}\nTotal Maps Excluded:{:<7}By Rating:{:<5}By Author:{:<5}By Name:{:<5}'.format( \
+			summaryData["totalToInstall"], summaryData["totalAlreadyInstalled"], summaryData["totalMaps"],  \
+			summaryData["totalExcluded"], summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"] )
 	
 	table.Update(values=tableData)
 	summaryLine.Update(value=summaryText)
