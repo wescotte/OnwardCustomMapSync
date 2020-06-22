@@ -5,6 +5,7 @@ import argparse
 import datetime 
 from zipfile import ZipFile
 from pathlib import Path
+import webbrowser
 
 from lxml import etree
 
@@ -28,15 +29,15 @@ import PySimpleGUI as sg
 ###############################################################################
 appVersion = 1.00
 
+filenameMapList = "Map List.csv"
+logFilename = "Onward Custom Map Sync.log"
 settingsFile="Onward Custom Map Sync Settings.xml"
+
 XMLSettings = None
 downloadedAnything = False	# If this is true we update the Last Run Date setting in the XML file on exit
 
-filenameMapList = 'Map List.csv'
-logFilename = "Onward Custom Map Sync.log"
 mapListGoogleURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pub?gid=0&single=true&output=csv'
 maps = {}	# Dictionary of map data download from Google Drive Spreadsheet
-
 
 onwardPath = "\..\LocalLow\Downpour Interactive\Onward\\"
 mapFolder = "CustomContent\\"
@@ -55,7 +56,7 @@ parser.add_argument('-rating', type=int,
 parser.add_argument("-noGUI", help="Disable the GUI and run in console mode", action='store_true')
 parser.add_argument("-logResults", help="Write all messages/errors to 'Onward Custom Map Sync.log'", action='store_true')
 parser.add_argument("-justUpdate", help="Only download updates for maps already installed", action='store_true')
-parser.add_argument("-justNew", help="Install only new maps (RELEASE DATE after the last Last_Date_Run in XML settings file) regardless of rating", action='store_true')               
+parser.add_argument("-justNew", help="Install only new maps (RELEASE DATE after the last Last_Date_Run in XML settings file) regardless of rating", action='store_true')			   
 parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format") 
 
 args = parser.parse_args()
@@ -136,111 +137,22 @@ def updateLastRunDate():
 # the Windows Task Scheduler
 ###############################################################################
 def createTask(h,m):
-	reportMessage("Test message: %s %s" % (h,m))
-	return
-	
-	print("Feature not implimented yet...")
-	exit()
-	
-	# How to delete a task...
-	"""
-	import pythoncom, time, win32api
-	from win32com.taskscheduler import taskscheduler
-	test_task_name='test_addtask_1.job'
-
-	ts=pythoncom.CoCreateInstance(taskscheduler.CLSID_CTaskScheduler,None,
-								  pythoncom.CLSCTX_INPROC_SERVER,taskscheduler.IID_ITaskScheduler)
-
-	tasks=ts.Enum()
-	for task in tasks:
-		reportMessage(task)
-	if test_task_name in tasks:
-		reportMessage('Deleting existing task '+test_task_name)
-		ts.Delete(test_task_name)	
-	"""
-	
-	reportMessage(timeToRun)
-	
-	# Get path of EXE
-	taskToRun=os.getcwd() + "\\" + sys.argv[0]
-	#return
-	"""
-	#creates a daily task
-	#def create_daily_task(name, cmd, hour=None, minute=None):
-	name="Onward Custom Map Sync"
-	cmd=taskToRun
-	cmd = cmd.split()
-	hour=22
-	minute=55
-
-	
-	import time
-	from win32com.taskscheduler import taskscheduler
-	
-	ts = pythoncom.CoCreateInstance(taskscheduler.CLSID_CTaskScheduler,None,
-									pythoncom.CLSCTX_INPROC_SERVER,
-									taskscheduler.IID_ITaskScheduler)
-	print("here");
-	if '%s.job' % name not in ts.Enum():
-		task = ts.NewWorkItem(name)
-		task.SetApplicationName(cmd[0])
-		task.SetParameters(' '.join(cmd[1:]))
-		task.SetPriority(taskscheduler.REALTIME_PRIORITY_CLASS)
-		task.SetFlags(taskscheduler.TASK_FLAG_RUN_ONLY_IF_LOGGED_ON)
-		task.SetAccountInformation('', None)
-		ts.AddWorkItem(name, task)
-		run_time = time.localtime(time.time() + 300)
-		tr_ind, tr = task.CreateTrigger()
-		tt = tr.GetTrigger()
-		tt.Flags = 0
-		tt.BeginYear = int(time.strftime('%Y', run_time))
-		tt.BeginMonth = int(time.strftime('%m', run_time))
-		tt.BeginDay = int(time.strftime('%d', run_time))
-
-		if minute is None:
-			tt.StartMinute = int(time.strftime('%M', run_time))
-
-		else:
-			tt.StartMinute = minute
-
-		if hour is None:
-			tt.StartHour = int(time.strftime('%H', run_time))
-
-		else:
-			tt.StartHour = hour
-
-		tt.TriggerType = int(taskscheduler.TASK_TIME_TRIGGER_DAILY)
-		tr.SetTrigger(tt)
-
-		pf = task.QueryInterface(pythoncom.IID_IPersistFile)
-		pf.Save(None,1)
-
-		task.Run()
-		print("here2")
-	else:
-		raise KeyError("%s already exists" % name)
-		print("h343")
-
-
-	task = ts.Activate(name)
-	exit_code, startup_error_code = task.GetExitCode()
-	return win32api.FormatMessage(startup_error_code)
-	"""
-
-
-
-
 	import datetime
 	import win32com.client
 
+	taskName='Onward Custom Map Sync'
+	
 	scheduler = win32com.client.Dispatch('Schedule.Service')
 	scheduler.Connect()
 	root_folder = scheduler.GetFolder('\\')
 	task_def = scheduler.NewTask(0)
 
+	
 	# Create trigger
-	start_time = datetime.datetime.now() + datetime.timedelta(minutes=1)
-	TASK_TRIGGER_TIME = 1
+	today = datetime.datetime.today()
+	time = datetime.time(int(h), int(m) )
+	start_time = datetime.datetime.combine(today, time)	
+	TASK_TRIGGER_TIME = 2 # Run Daily
 	trigger = task_def.Triggers.Create(TASK_TRIGGER_TIME)
 	trigger.StartBoundary = start_time.isoformat()
 
@@ -248,27 +160,32 @@ def createTask(h,m):
 	TASK_ACTION_EXEC = 0
 	action = task_def.Actions.Create(TASK_ACTION_EXEC)
 	action.ID = 'DO NOTHING'
-	action.Path = 'taskToRun'
-	action.Arguments = '-noGUI -quiet"'
+	action.Path = sys.argv[0]
+	action.WorkingDirectory=os.path.dirname(os.path.realpath(__file__))
+	action.Arguments = ''
 
+	
 	# Set parameters
-	task_def.RegistrationInfo.Description = 'Onward Customer Map Downloader'
+	task_def.RegistrationInfo.Description = 'Automatically download and update custom maps for the game Onward by Downpour Interactive'
 	task_def.Settings.Enabled = True
 	task_def.Settings.StopIfGoingOnBatteries = False
-
+	
 	# Register task
 	# If task already exists, it will be updated
 	TASK_CREATE_OR_UPDATE = 6
 	TASK_LOGON_NONE = 0
 	root_folder.RegisterTaskDefinition(
-		'Test Task',  # Task name
+		taskName,  # Task name
 		task_def,
 		TASK_CREATE_OR_UPDATE,
 		'',  # No user
 		'',  # No password
 		TASK_LOGON_NONE)
 
-	
+	#Delete the scheduled task
+	#root_folder.DeleteTask(taskName, 0)
+	return
+		
 
 ###############################################################################
 # Inform the user of a message
@@ -321,7 +238,7 @@ def reportMessage(message, logToFile=True):
 # https://github.com/wkentaro/gdown
 ###############################################################################				
 def downloadGoogleDriveFile(localFileName, url, fileSize, quiet=True, progressBarsGUI=None):
-	CHUNK_SIZE = 512 * 1024  # 512KB
+	CHUNK_SIZE = 512 * 1024	 # 512KB
 	url_origin = url
 	s = requests.session()
 	
@@ -516,7 +433,7 @@ def addFilterMsg(filterMsg, newMessage):
 ###############################################################################
 def needMap(mapID, mapHash):
 	infoFile=onwardPath + mapFolder + mapID + ".info"
-	contentFile=onwardPath + mapFolder + mapID + ".content"  
+	contentFile=onwardPath + mapFolder + mapID + ".content"	 
 
 	# If .content file doesn't exist you need to download the map
 	my_file = Path(contentFile)
@@ -527,19 +444,19 @@ def needMap(mapID, mapHash):
 	my_file = Path(infoFile)
 	if my_file.is_file() is False:
 			return "REINSTALL"
-			    		
+						
 		# check hash of .info file to verify if map the user already has is current
 	h=getHash(infoFile)
 	if h != mapHash:
 		return "UPDATE"	
 
-	# All test passed so we don't need this map file    	
+	# All test passed so we don't need this map file		
 	return "INSTALLED"
 	
 ###############################################################################
 # Download a mapID.zip file and verify the MD5 sum matches
 # Returns True/False on success/failure but also can return None if the user 
-# 	decides to abort the download
+#	decides to abort the download
 ###############################################################################	
 def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGUI=None):
 	# Download the Google Drive file
@@ -665,14 +582,14 @@ def startDownload(progressBarsGUI=False):
 		installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
 		# layout the form
-		layout = 	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[installLogFrame],[sg.Cancel()]]
+		layout =	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[installLogFrame],[sg.Cancel()]]
 
 		# create the form
 		window = sg.Window('Download Progress', layout=layout, disable_close=True)
 		
 		# We set the global window to the current progress bar window so the function reportMessage() is displaying messages to
 		#	the currently active window. Once downloads finish or are aborted we switch it back to the main window.
-		globalWindow=window 		
+		globalWindow=window			
 	
 	# Traverse the list of maps		
 	#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
@@ -700,7 +617,7 @@ def startDownload(progressBarsGUI=False):
 				mapStatus=getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=progressBarsGUI, progressBarsGUI=window)
 				if mapStatus is True:
 						installCount = installCount + 1
-						msg="{:*^16} Verified Hash       {:<25} by {:<20} Star Rating:{}".format("INSTALLED", maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
+						msg="{:*^16} Verified Hash		 {:<25} by {:<20} Star Rating:{}".format("INSTALLED", maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
 						reportMessage(msg)
 				elif mapStatus is None:
 					abortedByUser=True
@@ -710,7 +627,7 @@ def startDownload(progressBarsGUI=False):
 			except:
 				summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
 		else:
-			msg="{:*^16} Already installed   {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
+			msg="{:*^16} Already installed	 {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
 			reportMessage(msg)
 	
 	# If we completed a full loop and was not aborted by the user then we need to update the last run date
@@ -774,7 +691,7 @@ def displayGUI():
 	elif args.justUpdate is False and args.justNew is True:
 		qfDefault=2
 	quickFiltersCombobox=sg.Combo(quickFiltersList, readonly=True, visible=True, size=(32,1), default_value=quickFiltersList[qfDefault], font='Courier 8', change_submits=True, key="QF_SELECTED")
-	quickFiltersFrame=sg.Frame(title="Quick Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[[quickFiltersCombobox]]) 	
+	quickFiltersFrame=sg.Frame(title="Quick Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[[quickFiltersCombobox]])	
 	
 	###########################################################################
 	# Filter Selected
@@ -785,8 +702,8 @@ def displayGUI():
 	
 	###########################################################################
 	# Author Filter
-	authorList=list(set( maps["AUTHOR"])) 	# Get unique lists of Authors
-	authorList.sort(key=str.casefold)	 	# Put authors in ABC order
+	authorList=list(set( maps["AUTHOR"]))	# Get unique lists of Authors
+	authorList.sort(key=str.casefold)		# Put authors in ABC order
 	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), font='Courier 8', change_submits=True, default_value=authorList[0], key="AUTHOR_SELECTED")
 	# Since we need to keep the FILTER/CLEAR in sync we need to check if the default authtor is currently being filtered or not
 	btnText="EXCLUDE"
@@ -820,12 +737,12 @@ def displayGUI():
 	
 	###########################################################################
 	# Bottom Row
-	startDownloadBtn=sg.Button(button_text="Download", key='DOWNLOAD')
-
+	startDownloadBtn=sg.Button(button_text="Start Download", size=(10,2), key='DOWNLOAD')
+	helpBtn=sg.Button(button_text="Help", key='HELP')
 	###########################################################################
 	# Settings objects
-	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key="LOAD"), 		\
-							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key="SAVE"), 		\
+	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key="LOAD"),		\
+							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key="SAVE"),		\
 							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key="DEFAULT")	\
 					]
 	settingFrame=sg.Frame(title="Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(0,0,0,4), layout=[settingsObjs]) 
@@ -840,7 +757,7 @@ def displayGUI():
 		
 	###########################################################################
 	# Layout of GUI
-	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, settingFrame, taskSchedFrame]	 ]
+	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, helpBtn, settingFrame, taskSchedFrame]	 ]
 
 	# ------ Create Window ------
 	sg.change_look_and_feel('GreenTan')
@@ -928,7 +845,9 @@ def displayGUI():
 			#updateMapData(window, summaryData)
 			window.Reappear()
 			window.BringToFront()
-
+		elif event == "HELP":
+			webbrowser.open_new("https://github.com/wescotte/OnwardCustomMapSync")
+			
 		updateMapData(window, summaryData)
 	window.close()
 
@@ -949,7 +868,7 @@ def updateMapData(window, summaryData):
 	for i in range(0,l):
 		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], maps["MISC FIELDS"][i],  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
 	
-	summaryText='To Install:{:<4}Already Installed:{:<4}Maps Excluded:{:<4}Total Maps:{:<4}\nExcluded By    Rating:{:<4}Author:{:<4}Name:{:<4}Release Date:{:<4}'.format( \
+	summaryText='To Install:{:<4}Already Installed:{:<4}Maps Excluded:{:<4}Total Maps:{:<4}\nExcluded By	Rating:{:<4}Author:{:<4}Name:{:<4}Release Date:{:<4}'.format( \
 			summaryData["totalToInstall"], summaryData["totalAlreadyInstalled"], summaryData["totalExcluded"], summaryData["totalMaps"],  \
 			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"], summaryData["totalSkippedNotNewRelease"] )
 	
@@ -969,9 +888,9 @@ def updateMapData(window, summaryData):
 ###############################################################################
 def processFilters():
 	summaryData={}
-	summaryData.update({	"totalToInstall":0, 	"totalAlreadyInstalled":0, 																\
-							"totalSkippedRating":0, "totalSkippedAuthor":0, 	"totalSkippedName":0, 	"totalSkippedNotNewRelease":0,		\
-							"totalExcluded":0, 		"totalMapsFailed":0, 		"totalMaps":0 })
+	summaryData.update({	"totalToInstall":0,		"totalAlreadyInstalled":0,																\
+							"totalSkippedRating":0, "totalSkippedAuthor":0,		"totalSkippedName":0,	"totalSkippedNotNewRelease":0,		\
+							"totalExcluded":0,		"totalMapsFailed":0,		"totalMaps":0 })
 	
 	ratingFilter=getXMLRatingFilter()
 
@@ -1112,7 +1031,7 @@ def validateMapList():
 			reportMessage("{:*^16} Check for updates at https://github.com/wescotte/OnwardCustomMapSync".format("ERROR"))
 			valid=False
 	except:
-		reportMessage("{:*^16}  Can't validate version of Maps List.".format("ERROR"))
+		reportMessage("{:*^16}	Can't validate version of Maps List.".format("ERROR"))
 		valid=False
 	
 	# Check for any announcements to display to the user
