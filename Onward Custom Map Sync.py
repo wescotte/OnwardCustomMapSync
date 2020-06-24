@@ -65,7 +65,7 @@ parser.add_argument("-noGUI", help="Disable the GUI and run in console mode", ac
 parser.add_argument("-logResults", help="Write all messages/errors to 'Onward Custom Map Sync.log'", action='store_true')
 parser.add_argument("-justUpdate", help="Only download updates for maps already installed", action='store_true')
 parser.add_argument("-justNew", help="Install only new maps (RELEASE DATE after the last Last_Date_Run in XML settings file) regardless of rating", action='store_true')			   
-parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format") 
+parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format")
 parser.add_argument("-quiet", help="Disable GUI and don't display any output just write to log file.", action="store_true")
 
 args = parser.parse_args()
@@ -157,6 +157,12 @@ def createTask(h,m):
 	root_folder = scheduler.GetFolder('\\')
 	task_def = scheduler.NewTask(0)
 
+	arguments="-noGUI"
+	global args
+	if args.justNew is True:
+		arguments=arguments+" -justNew"
+	if args.justUpdate is True:
+		arguments=arguments+" -justUpdate"		
 
 	# Create trigger
 	today = datetime.datetime.today()
@@ -172,7 +178,7 @@ def createTask(h,m):
 	action.ID = 'DO NOTHING'
 	action.Path = sys.argv[0]
 	action.WorkingDirectory=os.path.dirname(os.path.realpath(__file__))
-	action.Arguments = ''
+	action.Arguments = arguments
 
 	
 	# Set parameters
@@ -246,6 +252,7 @@ def reportMessage(message, logToFile=True):
 				if errorMsgBuffer is None:
 					errorMsgBuffer = []
 				errorMsgBuffer.append(message)
+				
 	elif args.quiet is False:
 		print(message)
 	
@@ -407,7 +414,7 @@ def filterMap(needStatus, mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 			
 		releaseDate=datetime.datetime.strptime(mapReleaseDate, "%m/%d/%Y").date()
 		# If it's not a new release but there is an update we still download it
-		if releaseDate <= lastCheckDate and needStatus not in ["UPDATE", "REINSTALL"]:	
+		if releaseDate < lastCheckDate and needStatus not in ["UPDATE", "REINSTALL"]:	
 			filterMsg = addFilterMsg(filterMsg, "NOT A NEW RELEASE")
 	elif args.justUpdate is True and needStatus == "DOWNLOAD":
 		filterMsg = addFilterMsg(filterMsg, "NOT AN UPDATE")
@@ -574,111 +581,122 @@ def getXMLRatingFilter():
 # Start Downloading Maps
 ###############################################################################
 def startDownload(progressBarsGUI=False):
-	summaryData={}
-	summaryData=processFilters()
+	retryCount=0
+	retryMaxAttempts=3
 	
-	if summaryData["totalToInstall"] == 0:
-		reportMessage("{:*^15} No maps to install".format("INFO"))
-		if progressBarsGUI is not False:	
-			sg.popup("You have no maps marked for download.", title="Warning")
-		return
+	while retryCount < retryMaxAttempts:
+		summaryData={}
+		summaryData=processFilters()
 		
-	# If the user is in GUI mode disable the window from accepting input while 
-	#	downloading and create the progress bars window
-	global globalWindow
-	oldglobalWindow=globalWindow
-	
-	window=None	
-	if progressBarsGUI is not False:
-		# Goofy bug with pySimgpleGUI where if the string grows by a character it truncates....
-		# So just tack on a bunch of spaces at the end as a temporay fix	
-		mapProgressText=sg.Text('Downloading Map: {:50}'.format(maps["MAP NAME"][0]), key='MAP_PROGRESS_TEXT')
-		mapProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='MAP_PROGRESS')
-		allProgressText=sg.Text('Total Progress: Map 1 of {:50}'.format(summaryData["totalToInstall"]), key='ALL_PROGRESS_TEXT')
-		allProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='ALL_PROGRESS')
-
-		installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="Courier 7", background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
-		installLogObjs=[[installLog]]
-		installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
-	
-		# layout the form
-		layout =	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[installLogFrame],[sg.Cancel()]]
-
-		# create the form
-		window = sg.Window('Download Progress', layout=layout, disable_close=True)
-		
-		# We set the global window to the current progress bar window so the function reportMessage() is displaying messages to
-		#	the currently active window. Once downloads finish or are aborted we switch it back to the main window.
-		globalWindow=window			
-	
-	# Traverse the list of maps		
-	#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
-	l=len(maps["MAP NAME"])
-	installCount=0
-	abortedByUser=False
-	for i in range(0,l):			
-		# Update the progress bar if in GUI mode
-		if progressBarsGUI is not False:
-			# check to see if the cancel button was clicked and exit loop if clicked
-			event, values = window.read(timeout=0)
-			if event == 'Cancel' or sg.WIN_CLOSED or event == None:			
-				break		
+		if summaryData["totalToInstall"] == 0:
+			reportMessage("{:*^15} No maps to install".format("INFO"))
+			if progressBarsGUI is not False:	
+				sg.popup("You have no maps marked for download.", title="Warning")
+			return
 			
-			mapProgressText.Update(value='Downloading Map: {}'.format(maps["MAP NAME"][i]))
-			allProgressText.Update(value='Total Progress: Map {} of {}'.format(installCount+1, summaryData["totalToInstall"]))
-			allProgress.update_bar(installCount, summaryData["totalToInstall"])			
+		# If the user is in GUI mode disable the window from accepting input while 
+		#	downloading and create the progress bars window
+		global globalWindow
+		oldglobalWindow=globalWindow
 		
-		if maps["MISC FIELDS"][i] in ["REINSTALL", "DOWNLOAD", "UPDATE"]:
-			msg="{} of {}".format(installCount+1, summaryData["totalToInstall"])
-			msg="{:*^15} {:<35} {:<25} by {:<20} size:{:<4}mb".format("DOWNLOADING", "MAP " + msg, maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i])
-			reportMessage(msg)
-			try:
-				mapStatus=getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=progressBarsGUI, progressBarsGUI=window)
-				installCount = installCount + 1
-				if mapStatus is True:
-						msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("INSTALLED", "Hash Verified", maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
-						reportMessage(msg)
-				elif mapStatus is None:
-					abortedByUser=True
-					break
-				else:
+		window=None	
+		if progressBarsGUI is not False:
+			# Goofy bug with pySimgpleGUI where if the string grows by a character it truncates....
+			# So just tack on a bunch of spaces at the end as a temporay fix	
+			mapProgressText=sg.Text('Downloading Map: {:50}'.format(maps["MAP NAME"][0]), key='MAP_PROGRESS_TEXT')
+			mapProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='MAP_PROGRESS')
+			allProgressText=sg.Text('Total Progress: Map 1 of {:50}'.format(summaryData["totalToInstall"]), key='ALL_PROGRESS_TEXT')
+			allProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='ALL_PROGRESS')
+
+			installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="Courier 7", background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
+			installLogObjs=[[installLog]]
+			installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
+		
+			# layout the form
+			layout =	[[mapProgressText],[mapProgress],[allProgressText],[allProgress],[installLogFrame],[sg.Cancel()]]
+
+			# create the form
+			window = sg.Window('Download Progress', layout=layout, disable_close=True)
+			
+			# We set the global window to the current progress bar window so the function reportMessage() is displaying messages to
+			#	the currently active window. Once downloads finish or are aborted we switch it back to the main window.
+			globalWindow=window			
+		
+		# Traverse the list of maps		
+		#TODO Sanity check all spreadhsheet data as looping... ie make sure filesize is a number, etc etc
+		l=len(maps["MAP NAME"])
+		installCount=0
+		abortedByUser=False
+		for i in range(0,l):			
+			# Update the progress bar if in GUI mode
+			if progressBarsGUI is not False:
+				# check to see if the cancel button was clicked and exit loop if clicked
+				event, values = window.read(timeout=0)
+				if event == 'Cancel' or sg.WIN_CLOSED or event == None:			
+					break		
+				
+				mapProgressText.Update(value='Downloading Map: {}'.format(maps["MAP NAME"][i]))
+				allProgressText.Update(value='Total Progress: Map {} of {}'.format(installCount+1, summaryData["totalToInstall"]))
+				allProgress.update_bar(installCount, summaryData["totalToInstall"])			
+			
+			if maps["MISC FIELDS"][i] in ["REINSTALL", "DOWNLOAD", "UPDATE"]:
+				msg="{} of {}".format(installCount+1, summaryData["totalToInstall"])
+				msg="{:*^15} {:<35} {:<25} by {:<20} size:{:<4}mb".format("DOWNLOADING", "MAP " + msg, maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i])
+				reportMessage(msg)
+				try:
+					mapStatus=getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=progressBarsGUI, progressBarsGUI=window)
+					installCount = installCount + 1
+					if mapStatus is True:
+							msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("INSTALLED", "Hash Verified", maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
+							reportMessage(msg)
+					elif mapStatus is None:
+						abortedByUser=True
+						break
+					else:
+						summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
+				except:
 					summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
-			except:
-				summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
-		elif maps["MISC FIELDS"][i] == "INSTALLED":
-			msg="{:*^15} {:<35}	{:<25} by {:<20}".format("INFO", "Already Installed", maps["MAP NAME"][i], maps["AUTHOR"][i])
+			elif maps["MISC FIELDS"][i] == "INSTALLED":
+				msg="{:*^15} {:<35}	{:<25} by {:<20}".format("INFO", "Already Installed", maps["MAP NAME"][i], maps["AUTHOR"][i])
+				reportMessage(msg)
+			else:
+				msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("FILTERED BY", maps["MISC FIELDS"][i][13:], maps["MAP NAME"][i], maps["AUTHOR"][i],  maps["RATING"][i])		
+				#msg="{:*^15} Already installed	 {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
+				reportMessage(msg)		
+		
+		# If we completed a full loop and was not aborted by the user then we need to update the last run date
+		if abortedByUser is True:	
+			reportMessage("{:*^15} Aborted by user".format("INFO"))
+		elif summaryData["totalMapsFailed"] == 0:
+			updateLastRunDate()
+		
+		msg="{:*^15} New Maps installed:{:<5}Maps Skipped:{:<10}Maps Failed Install:{:<30}Total Maps:{:<5}".format("INFO", \
+			installCount, summaryData["totalAlreadyInstalled"], summaryData["totalMapsFailed"], l)
+		reportMessage(msg)
+		msg="{:*^15} Filterd by Rating:{:<6}Filterd by Author:{:<5}Filterd by Name:{:<9}Filterd Not New:{:<9}Total Filtered:{:<5}".format("INFO", \
+			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"],summaryData["totalSkippedName"], summaryData["totalSkippedNotNewRelease"], \
+			summaryData["totalExcluded"] )
+		reportMessage(msg)
+
+		if progressBarsGUI is True:
+			if window != None:
+				# Switch from progress bars to original GUI and copy install log 
+				globalWindow=oldglobalWindow
+				msgs=installLog.get().split("\n")
+				for m in msgs:
+					reportMessage(m, False)
+				window.close()
+		else:
+			# os.system("pause")
+			pass
+		
+		# If there are any failed downloads then retry to download any missing maps again
+		if summaryData["totalMapsFailed"] != 0:
+			retryCount = retryCount + 1
+			msg="{:*^15} {} failed to install. Retrying... Attempt {} of {}".format("ERROR", summaryData["totalMapsFailed"], retryCount, retryMaxAttempts)
 			reportMessage(msg)
 		else:
-			msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("FILTERED BY", maps["MISC FIELDS"][i][13:], maps["MAP NAME"][i], maps["AUTHOR"][i],  maps["RATING"][i])		
-			#msg="{:*^15} Already installed	 {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
-			reportMessage(msg)		
-	
-	# If we completed a full loop and was not aborted by the user then we need to update the last run date
-	if abortedByUser is True:	
-		reportMessage("{:*^15} Aborted by user".format("INFO"))
-	else:
-		updateLastRunDate()
-	
-	msg="{:*^15} New Maps installed:{:<5}Maps Skipped:{:<10}Maps Failed Install:{:<30}Total Maps:{:<5}".format("INFO", \
-		installCount, summaryData["totalAlreadyInstalled"], summaryData["totalMapsFailed"], l)
-	reportMessage(msg)
-	msg="{:*^15} Filterd by Rating:{:<6}Filterd by Author:{:<5}Filterd by Name:{:<9}Filterd Not New:{:<9}Total Filtered:{:<5}".format("INFO", \
-		summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"],summaryData["totalSkippedName"], summaryData["totalSkippedNotNewRelease"], \
-		summaryData["totalExcluded"] )
-	reportMessage(msg)
-
-	if progressBarsGUI is False:
-		os.system("pause")
-	else:
-		if window != None:
-			# Switch from progress bars to original GUI and copy install log 
-			globalWindow=oldglobalWindow
-			msgs=installLog.get().split("\n")
-			for m in msgs:
-				reportMessage(m, False)
-			window.close()
-
-
+			break
 
 
 ###############################################################################
