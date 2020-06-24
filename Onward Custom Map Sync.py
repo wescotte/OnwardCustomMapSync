@@ -46,7 +46,15 @@ mapFolder = "CustomContent\\"
 globalWindow = None
 errorMsgBuffer = None
 logFileGlobal = None
-		
+
+# Colors
+COLOR_FILTERED="#770000"
+COLOR_DOWNLOAD="#007700"
+COLOR_DEFAULT="#FFFFFF"
+COLOR_BACKGROUND="#000000"
+COLOR_ERROR_MESSAGE="#770000"
+COLOR_ANNOUNCEMENT="#007700"
+
 ###############################################################################
 # Setup Command Line Arguments
 ###############################################################################
@@ -58,6 +66,7 @@ parser.add_argument("-logResults", help="Write all messages/errors to 'Onward Cu
 parser.add_argument("-justUpdate", help="Only download updates for maps already installed", action='store_true')
 parser.add_argument("-justNew", help="Install only new maps (RELEASE DATE after the last Last_Date_Run in XML settings file) regardless of rating", action='store_true')			   
 parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format") 
+parser.add_argument("-quiet", help="Disable GUI and don't display any output just write to log file.", action="store_true")
 
 args = parser.parse_args()
 ###############################################################################
@@ -127,15 +136,16 @@ def updateLastRunDate():
 		runDate = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Last_Date_Run')
 		runDate[0].text=datetime.date.today().strftime("%m/%d/%Y")
 	except: 
-		reportMessage('{:*^16} Unable to update last run date. Your "Onward Custom Map Sync Settings.xml" might be corrupted....'.format("ERROR"))
-		reportMessage('{:*^16} You can erase this file and run the program again and it will create a new one with default settings'.format("ERROR"))
+		reportMessage('{:*^15} Unable to update last run date. Your "Onward Custom Map Sync Settings.xml" might be corrupted....'.format("ERROR"))
+		reportMessage('{:*^15} You can erase this file and run the program again and it will create a new one with default settings'.format("ERROR"))
 	saveSettings()
 	
-
+ 
 ###############################################################################
 # Add an entry for this program to run automatically via 
 # the Windows Task Scheduler
 ###############################################################################
+# https://stackoverflow.com/questions/26160900/is-there-a-way-to-add-a-task-to-the-windows-task-scheduler-via-python-3
 def createTask(h,m):
 	import datetime
 	import win32com.client
@@ -147,7 +157,7 @@ def createTask(h,m):
 	root_folder = scheduler.GetFolder('\\')
 	task_def = scheduler.NewTask(0)
 
-	
+
 	# Create trigger
 	today = datetime.datetime.today()
 	time = datetime.time(int(h), int(m) )
@@ -169,7 +179,7 @@ def createTask(h,m):
 	task_def.RegistrationInfo.Description = 'Automatically download and update custom maps for the game Onward by Downpour Interactive'
 	task_def.Settings.Enabled = True
 	task_def.Settings.StopIfGoingOnBatteries = False
-	
+		
 	# Register task
 	# If task already exists, it will be updated
 	TASK_CREATE_OR_UPDATE = 6
@@ -204,10 +214,12 @@ def reportMessage(message, logToFile=True):
 	if logFileGlobal is not None and logToFile is True:
 		logFileGlobal.write(datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + " " + message + "\n")
 		
-	if args.noGUI is False:
-		color="black"
+	if args.noGUI is False and args.quiet is False:
+		color=COLOR_DEFAULT
 		if message.find("ERROR") != -1:
-			color="red"	
+			color=COLOR_ERROR_MESSAGE
+		elif  message.find("ANNOUNCEMENT") != -1:
+			color=COLOR_ANNOUNCEMENT
 
 		# If no GUI window exists buffer the errors so when it exists we can output all messages
 		#	This occurs if there are errors before the GUI is created/finalized OR
@@ -220,8 +232,13 @@ def reportMessage(message, logToFile=True):
 			try: # Could also be in a state where the GUI exists but the INSTALL_LOG portion itself doesn't for some reason...
 				log=globalWindow["INSTALL_LOG"]
 				if errorMsgBuffer is not None:
+					color=COLOR_DEFAULT
 					for m in errorMsgBuffer:
-						log.update(m + "\n", append=True)
+						if m.find("ERROR") != -1:
+							color=COLOR_ERROR_MESSAGE
+						elif m.find("ANNOUNCEMENT") != -1:
+									color=COLOR_ANNOUNCEMENT
+						log.update(m + "\n", text_color_for_value=color, append=True)
 					errorMsgBuffer = None
 				
 				log.update(message + "\n", text_color_for_value=color, append=True, autoscroll=True)
@@ -229,7 +246,7 @@ def reportMessage(message, logToFile=True):
 				if errorMsgBuffer is None:
 					errorMsgBuffer = []
 				errorMsgBuffer.append(message)
-	else:
+	elif args.quiet is False:
 		print(message)
 	
 ###############################################################################
@@ -368,7 +385,7 @@ def get_url_from_gdrive_confirmation(contents):
 #	"" if map isn't filterd otherwise returns the type of filter detected
 #	as a string
 ###############################################################################
-def filterMap(mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
+def filterMap(needStatus, mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 	filterMsg = ""
 
 	# mapRating going to be a string so convert it to an integer
@@ -389,19 +406,22 @@ def filterMap(mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 			lastCheckDate=datetime.date.today()
 			
 		releaseDate=datetime.datetime.strptime(mapReleaseDate, "%m/%d/%Y").date()
-		if releaseDate <= lastCheckDate:
+		# If it's not a new release but there is an update we still download it
+		if releaseDate <= lastCheckDate and needStatus not in ["UPDATE", "REINSTALL"]:	
 			filterMsg = addFilterMsg(filterMsg, "NOT A NEW RELEASE")
-		
+	elif args.justUpdate is True and needStatus == "DOWNLOAD":
+		filterMsg = addFilterMsg(filterMsg, "NOT AN UPDATE")
+
 	IDFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_ID')
 	for f in IDFilter:
 		if f.text == mapID:
-			reportMessage("{:*^16} {:<25} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
+			reportMessage("{:*^15} {:<35} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
 			filterMsg = addFilterMsg(filterMsg, "MAP NAME")
 			
 	authorFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
 	for f in authorFilter:
 		if f.text == mapAuthor:
-			reportMessage("{:*^16} {:<25} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
+			reportMessage("{:*^15} {:<35} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
 			filterMsg = addFilterMsg(filterMsg, "AUTHOR")
 
 	ratingFilter=getXMLRatingFilter()
@@ -466,10 +486,10 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	if "DRIVE.GOOGLE.COM" in mapDownloadURL.upper():
 		gotMap=downloadGoogleDriveFile(downloadName, mapDownloadURL, fileSize, quiet, progressBarsGUI)
 	elif "KOIZ" in mapDownloadURL.upper():
-		reportMessage("{:*^16} Koiz doesn't want his maps hosted anywhere except official Onward servers... Please ask him to reconsider as this tool can't access those files directly.".format("INFO"))	
+		reportMessage("{:*^15} Koiz doesn't want his maps hosted anywhere except official Onward servers... Please ask him to reconsider as this tool can't access those files directly.".format("INFO"))	
 		return False
 	else:
-		reportMessage("{:*^16} Don't know how to download URL: {}".format("ERROR", mapDownloadURL))
+		reportMessage("{:*^15} Don't know how to download URL: {}".format("ERROR", mapDownloadURL))
 		return False
 	
 	# If download failed/aborted then no reason to unzip or check hashes
@@ -479,7 +499,7 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 	# validate hash
 	calculatedZipHash = getHash(downloadName)
 	if zipHash != calculatedZipHash:
-		reportMessage("{:*^16} Zip file hash incorrect. Expecting {} but got {}".format("ERROR", zipHash, calculatedZipHash))
+		reportMessage("{:*^15} Zip file hash incorrect. Expecting {} but got {}".format("ERROR", zipHash, calculatedZipHash))
 
 		try:
 			os.remove(downloadName)	
@@ -496,7 +516,7 @@ def getMap(mapID, mapDownloadURL, zipHash, fileSize, quiet=False, progressBarsGU
 		except:
 			zipObj.close()
 			os.remove(downloadName)
-			reportMessage("{:*^16} Failed to extract {}".format("ERROR", downloadName))
+			reportMessage("{:*^15} Failed to extract {}".format("ERROR", downloadName))
 			return False
 			
 	zipObj.close()	
@@ -558,7 +578,9 @@ def startDownload(progressBarsGUI=False):
 	summaryData=processFilters()
 	
 	if summaryData["totalToInstall"] == 0:
-		reportMessage("{:*^16} No maps to install".format("INFO"))
+		reportMessage("{:*^15} No maps to install".format("INFO"))
+		if progressBarsGUI is not False:	
+			sg.popup("You have no maps marked for download.", title="Warning")
 		return
 		
 	# If the user is in GUI mode disable the window from accepting input while 
@@ -568,16 +590,14 @@ def startDownload(progressBarsGUI=False):
 	
 	window=None	
 	if progressBarsGUI is not False:
-		if summaryData["totalToInstall"] == 0:
-			sg.popup("You have no maps marked for download.", title="Warning")
-			return
-
-		mapProgressText=sg.Text('Downloading Map: %s' % maps["MAP NAME"][0], key='MAP_PROGRESS_TEXT')
+		# Goofy bug with pySimgpleGUI where if the string grows by a character it truncates....
+		# So just tack on a bunch of spaces at the end as a temporay fix	
+		mapProgressText=sg.Text('Downloading Map: {:50}'.format(maps["MAP NAME"][0]), key='MAP_PROGRESS_TEXT')
 		mapProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='MAP_PROGRESS')
-		allProgressText=sg.Text('Total Progress: Map 1 of %d' % (summaryData["totalToInstall"]), key='ALL_PROGRESS_TEXT')
+		allProgressText=sg.Text('Total Progress: Map 1 of {:50}'.format(summaryData["totalToInstall"]), key='ALL_PROGRESS_TEXT')
 		allProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='ALL_PROGRESS')
 
-		installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="Courier 7", key='INSTALL_LOG')
+		installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="Courier 7", background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
 		installLogObjs=[[installLog]]
 		installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
@@ -603,21 +623,20 @@ def startDownload(progressBarsGUI=False):
 			event, values = window.read(timeout=0)
 			if event == 'Cancel' or sg.WIN_CLOSED or event == None:			
 				break		
-				
-			mapProgressText.Update(value='Downloading Map: %s' % maps["MAP NAME"][i])
-			allProgressText.Update(value='Total Progress: Map %d of %d' % (installCount+1, summaryData["totalToInstall"]))
-			allProgress.update_bar(installCount, summaryData["totalToInstall"])			
-			print('Total Progress: Map %d of %d' % (installCount+1, summaryData["totalToInstall"]))
 			
+			mapProgressText.Update(value='Downloading Map: {}'.format(maps["MAP NAME"][i]))
+			allProgressText.Update(value='Total Progress: Map {} of {}'.format(installCount+1, summaryData["totalToInstall"]))
+			allProgress.update_bar(installCount, summaryData["totalToInstall"])			
+		
 		if maps["MISC FIELDS"][i] in ["REINSTALL", "DOWNLOAD", "UPDATE"]:
 			msg="{} of {}".format(installCount+1, summaryData["totalToInstall"])
-			msg="{:*^16} MAP {:<15} {:<25} by {:<20} size:{:<4}mb".format("DOWNLOADING", msg, maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i])
+			msg="{:*^15} {:<35} {:<25} by {:<20} size:{:<4}mb".format("DOWNLOADING", "MAP " + msg, maps["MAP NAME"][i], maps["AUTHOR"][i], maps["FILE SIZE"][i])
 			reportMessage(msg)
 			try:
 				mapStatus=getMap(maps["ID"][i], maps["DOWNLOAD URL"][i], maps["ZIP HASH"][i], maps["FILE SIZE"][i], quiet=progressBarsGUI, progressBarsGUI=window)
+				installCount = installCount + 1
 				if mapStatus is True:
-						installCount = installCount + 1
-						msg="{:*^16} Verified Hash		 {:<25} by {:<20} Star Rating:{}".format("INSTALLED", maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
+						msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("INSTALLED", "Hash Verified", maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i])
 						reportMessage(msg)
 				elif mapStatus is None:
 					abortedByUser=True
@@ -626,20 +645,24 @@ def startDownload(progressBarsGUI=False):
 					summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
 			except:
 				summaryData["totalMapsFailed"] = summaryData["totalMapsFailed"] + 1
-		else:
-			msg="{:*^16} Already installed	 {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
+		elif maps["MISC FIELDS"][i] == "INSTALLED":
+			msg="{:*^15} {:<35}	{:<25} by {:<20}".format("INFO", "Already Installed", maps["MAP NAME"][i], maps["AUTHOR"][i])
 			reportMessage(msg)
+		else:
+			msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("FILTERED BY", maps["MISC FIELDS"][i][13:], maps["MAP NAME"][i], maps["AUTHOR"][i],  maps["RATING"][i])		
+			#msg="{:*^15} Already installed	 {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
+			reportMessage(msg)		
 	
 	# If we completed a full loop and was not aborted by the user then we need to update the last run date
 	if abortedByUser is True:	
-		reportMessage("*{:*^16} Aborted by user".format("INFO"))
+		reportMessage("{:*^15} Aborted by user".format("INFO"))
 	else:
 		updateLastRunDate()
 	
-	msg="{:*^16} New Maps installed:{:<5}Maps Skipped:{:<10}Maps Failed Install:{:<30}Total Maps:{:<5}".format("INFO", \
+	msg="{:*^15} New Maps installed:{:<5}Maps Skipped:{:<10}Maps Failed Install:{:<30}Total Maps:{:<5}".format("INFO", \
 		installCount, summaryData["totalAlreadyInstalled"], summaryData["totalMapsFailed"], l)
 	reportMessage(msg)
-	msg="{:*^16} Filterd by Rating:{:<6}Filterd by Author:{:<5}Filterd by Name:{:<9}Filterd Not New:{:<9}Total Filtered:{:<5}".format("INFO", \
+	msg="{:*^15} Filterd by Rating:{:<6}Filterd by Author:{:<5}Filterd by Name:{:<9}Filterd Not New:{:<9}Total Filtered:{:<5}".format("INFO", \
 		summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"],summaryData["totalSkippedName"], summaryData["totalSkippedNotNewRelease"], \
 		summaryData["totalExcluded"] )
 	reportMessage(msg)
@@ -673,7 +696,7 @@ def displayGUI():
 	table=sg.Table(values=[], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
-					col_widths=[30,25,45, 13,13,13,13],
+					col_widths=[30,25,45, 12,12,13,13],
 					justification='center',
 					num_rows=20,
 					key='MAPS_TABLE',
@@ -731,7 +754,7 @@ def displayGUI():
 	###########################################################################
 	# Summary
 	summaryLine=sg.Text("",size=(80,2), key='SUMMARY_LINE')	
-	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font='Courier 7', key='INSTALL_LOG')
+	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font='Courier 7', background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
 	installLogObjs=[[installLog], [summaryLine]]
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
@@ -760,7 +783,7 @@ def displayGUI():
 	layout = [ [filterFrame], [table], [installLogFrame], [startDownloadBtn, helpBtn, settingFrame, taskSchedFrame]	 ]
 
 	# ------ Create Window ------
-	sg.change_look_and_feel('GreenTan')
+	#sg.change_look_and_feel('GreenTan')
 	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,650) )
 
 	# Finalize the layout and then update populate the table / status lines otherwise won't update until user does something to trigger the event loop	
@@ -864,15 +887,22 @@ def updateMapData(window, summaryData):
 
 	tableData=[]
 	
+	rc=[]
+	
 	l=len(maps["MAP NAME"])	
 	for i in range(0,l):
 		tableData.append([maps["MAP NAME"][i], maps["AUTHOR"][i], maps["MISC FIELDS"][i],  maps["FILE SIZE"][i] + "mb", maps["RATING"][i], maps["RELEASE DATE"][i], maps["UPDATE DATE"][i]])
-	
+		if maps["MISC FIELDS"][i] in ["DOWNLOAD", "UPDATE", "REINSTALL"]:
+			rc.append((i, COLOR_DOWNLOAD, COLOR_BACKGROUND))
+		elif maps["MISC FIELDS"][i].find("FILTER") != -1:
+			rc.append((i,COLOR_FILTERED, COLOR_BACKGROUND))
+		else:
+			rc.append((i,COLOR_DEFAULT, COLOR_BACKGROUND))
 	summaryText='To Install:{:<4}Already Installed:{:<4}Maps Excluded:{:<4}Total Maps:{:<4}\nExcluded By	Rating:{:<4}Author:{:<4}Name:{:<4}Release Date:{:<4}'.format( \
 			summaryData["totalToInstall"], summaryData["totalAlreadyInstalled"], summaryData["totalExcluded"], summaryData["totalMaps"],  \
 			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"], summaryData["totalSkippedNotNewRelease"] )
 	
-	table.Update(values=tableData)
+	table.Update(values=tableData, row_colors=rc)
 	summaryLine.Update(value=summaryText)
 
 	# Update the button text on the Author Remove to reflect the current seletion
@@ -882,6 +912,7 @@ def updateMapData(window, summaryData):
 	else:
 		window["AUTHOR"].update(text="EXCLUDE")		
 
+	window.Finalize()
 
 ###############################################################################
 # Traverse the list of maps and keep track of which maps to download or skip
@@ -901,7 +932,7 @@ def processFilters():
 		status=""
 		
 		needStatus=needMap(maps["ID"][i], maps["INFO HASH"][i])
-		filterStatus=filterMap(maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i])
+		filterStatus=filterMap(needStatus, maps["ID"][i], maps["MAP NAME"][i], maps["AUTHOR"][i], maps["RATING"][i], maps["RELEASE DATE"][i])
 			
 		# If a map is already installed flag to skip it		
 		if needStatus == "INSTALLED":
@@ -909,7 +940,7 @@ def processFilters():
 			status=needStatus
 		# If we use the -justUpdate flag and an update is available download it regardless of any filters.
 		# Otherwise only download if we need it and there are no filters.
-		elif (needStatus == "UPDATE" and args.justUpdate is True) or (needStatus in ["UPDATE", "REINSTALL", "DOWNLOAD"] and filterStatus == "" and args.justUpdate is False):
+		elif (needStatus in ["UPDATE", "REINSTALL", "DOWNLOAD"] and filterStatus == ""):
 			summaryData["totalToInstall"]=summaryData["totalToInstall"]+1
 			status=needStatus
 		else:
@@ -977,27 +1008,27 @@ def validateMapList():
 	global onwardPath
 	
 	if "APPDATA" not in os.environ:
-		reportMessage("{:*^16} APPDATA environmental variable not set. Don't know how to find Onward Custom Maps folder".format("ERROR"))
+		reportMessage("{:*^15} APPDATA environmental variable not set. Don't know how to find Onward Custom Maps folder".format("ERROR"))
 		valid=False
 	else:	
 		onwardPath = os.environ["APPDATA"] + onwardPath
 	
 	# Make sure the Onward folder exists
 	if os.path.isdir(onwardPath) is False:
-		reportMessage("{:*^16} Can't find ONWARD folder in '{}'".format("ERROR",onwardPath))
+		reportMessage("{:*^15} Can't find ONWARD folder in '{}'".format("ERROR",onwardPath))
 		valid=False
 		
 	global maps
 	maps = {}
 	# Download the custom maps list from Google Drive
-	reportMessage("{:*^16} Obtaining the complete custom maps list from server.".format("INFO"))	
+	reportMessage("{:*^15} Obtaining the complete custom maps list from server.".format("INFO"))	
 	try:
 		downloadGoogleDriveFile(filenameMapList, mapListGoogleURL, 0, quiet=True)
 	except AssertionError as error:
-		reportMessage("{:*^16} Unable to obtain the list of custom maps... Please try again later.".format("ERROR"))	
+		reportMessage("{:*^15} Unable to obtain the list of custom maps... Please try again later.".format("ERROR"))	
 		valid=False
 
-	reportMessage("{:*^16} List downloaded sucessfully...".format("INFO"))
+	reportMessage("{:*^15} List downloaded sucessfully...".format("INFO"))
 
 	# Read the maps list from the file into a Dictionary
 	f = open(filenameMapList)
@@ -1013,13 +1044,13 @@ def validateMapList():
 	# Make sure all keys exist
 	for k in validKeys:
 		if k not in maps.keys():
-			reportMessage("{:*^16} Can to find \"{}\" data in map list... Make sure you are running the current version of this tool.".format("ERROR",k))
+			reportMessage("{:*^15} Can to find \"{}\" data in map list... Make sure you are running the current version of this tool.".format("ERROR",k))
 			valid=False
 	
 	# Make sure there is some data in the file
 	l=len(maps["MAP NAME"])
 	if l is None or l < 1:	
-		reportMessage("{:*^16} Map list downloaded but is empty... Try again later.".format("ERROR"))	
+		reportMessage("{:*^15} Map list downloaded but is empty... Try again later.".format("ERROR"))	
 		valid=False		
 	
 	# Verify the version of the map data works wiht this version of the application
@@ -1027,11 +1058,11 @@ def validateMapList():
 		vPos=maps["MISC FIELDS"].index("VERSION")	
 		mapListVer=float(maps["MISC FIELDS"][vPos+1])
 		if appVersion < mapListVer:
-			reportMessage("{:*^16} Your application version is out of date. Please update".format("ERROR"))
-			reportMessage("{:*^16} Check for updates at https://github.com/wescotte/OnwardCustomMapSync".format("ERROR"))
+			reportMessage("{:*^15} Your application version is out of date. Please update".format("ERROR"))
+			reportMessage("{:*^15} Check for updates at https://github.com/wescotte/OnwardCustomMapSync".format("ERROR"))
 			valid=False
 	except:
-		reportMessage("{:*^16}	Can't validate version of Maps List.".format("ERROR"))
+		reportMessage("{:*^15}	Can't validate version of Maps List.".format("ERROR"))
 		valid=False
 	
 	# Check for any announcements to display to the user
@@ -1040,7 +1071,7 @@ def validateMapList():
 		vPos=0
 		while True:
 			vPos=maps["MISC FIELDS"].index("ANNOUNCEMENT", vPos)+1
-			reportMessage("{:*^16} {}".format("ANNOUNCEMENT", maps["MISC FIELDS"][vPos]))
+			reportMessage("{:*^15} {}".format("ANNOUNCEMENT", maps["MISC FIELDS"][vPos]))
 	except:
 		pass
 		
@@ -1056,7 +1087,7 @@ if __name__ == "__main__":
 			import ctypes
 		whnd = ctypes.windll.kernel32.GetConsoleWindow()
 		if whnd != 0:
-			#ctypes.windll.user32.ShowWindow(whnd, 0)
+			ctypes.windll.user32.ShowWindow(whnd, 0)
 		# if you wanted to close the handles...
 		#ctypes.windll.kernel32.CloseHandle(whnd)			
 			pass
@@ -1126,7 +1157,7 @@ if __name__ == "__main__":
 			import ctypes
 		whnd = ctypes.windll.kernel32.GetConsoleWindow()
 		if whnd != 0:
-			#ctypes.windll.user32.ShowWindow(whnd, 1)
+			ctypes.windll.user32.ShowWindow(whnd, 2)
 			pass
 
 	# Close the log file on exist
