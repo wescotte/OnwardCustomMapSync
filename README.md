@@ -21,12 +21,12 @@ Any filters you apply are temporary unless you click **Save**.
 
 All filters can be adjusted manually via your favorite text editor by modifying the **Onward Custom Map Sync Settings.xml**
 
-<Exclude_Maps_Filters>
-	<Exlude_Map_ID>3351ae75-a8e3-48b0-9451-d136a08ad114</Exlude_Map_ID>
-	<Exlude_Map_ID>cfcb28ad-7083-4956-9eb6-5e6311c22393</Exlude_Map_ID>
-	<Exlude_Map_Author>koiz</Exlude_Map_Author>
-	<Ratings_Filter>4</Ratings_Filter>
-</Exclude_Maps_Filters>
+- <Exclude_Maps_Filters>
+- -	<Exlude_Map_ID>3351ae75-a8e3-48b0-9451-d136a08ad114</Exlude_Map_ID>
+- -	<Exlude_Map_ID>cfcb28ad-7083-4956-9eb6-5e6311c22393</Exlude_Map_ID>
+- -	<Exlude_Map_Author>koiz</Exlude_Map_Author>
+- -	<Ratings_Filter>4</Ratings_Filter>
+- </Exclude_Maps_Filters>
 
 **NOTE**If you don't know what the ID to use with <Exclude_Map_ID> you can look them up [here](https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pubhtml?gid=0&single=true) or you can open **Map List.csv** while the program is running.
 
