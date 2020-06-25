@@ -30,8 +30,13 @@ All filters can be adjusted manually via your favorite text editor by modifying 
 
 **NOTE**If you don't know what the ID to use with <Exclude_Map_ID> you can look them up [here](https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pubhtml?gid=0&single=true) or you can open **Map List.csv** while the program is running.
 
+## Command Line Arguments
+* **-rating <int>** Specify your rating threshold
+* **-noGUI** Disables GUI interface and automatically starts downloading (using XML setting file filters) when you run the app
+* **-justUpdate** Only downloads updates for maps you already have installed
+* **--justNew** Only downloads new maps that were released after the last time the app was run (last run date stored in XML settings file)
+
 ## How this tool works:
-Unfortunately Downpour Interactive doesn't allow their workshop data to be accessible outside of Onward so I personally have to download all the maps and make them publically available via my personal Google Drive. This tool pulls data from [this Google Spreadhsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pubhtml?gid=0&single=true) (which I also maintain) in order to know how to identify if a map is current or not. 
+Unfortunately Downpour Interactive doesn't allow their workshop data to be accessible outside of Onward so I personally have to download all the maps and make them publically available via my personal Google Drive. This means I have to keep up with Onward custom map releases for this tool to function. So if you notice Onward is reporting there are updates/new maps but this tool doesn't please let me know (Wescott on the Onward Discord) so I can fix the issue.
 
-It does just my performing an md5sum on the .info file and if it doesn't match it assumes you have old version and downloads the link in the spreadhseet and unzips it in the proper location. Since I am manually keeping track of this database it's possible a map is released but I haven't downloaded it and updated the document. If this is the case you can always go into Onward and download from the game. 
-
+This tool pulls data from [this Google Spreadhsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uNvIexndfAxla3VACEpz6wCSLs8v8w1VzdmUPEw7SxuInqxbOEje_fUoxR5vmGnBZ9BRLloMJ0Xc/pubhtml?gid=0&single=true) (which I manually update) in order to know how to identify if a map is current or not. I record the m5sum of each map's .info file and use this as a basis to determine if you have the current version or not. If your .info doesn't match my list (or you don't have the .info file at all) it flags that map to be installed. When you look at the spreadsheet you will see there is a Google Drive link for each map so you can download them directly that way instead of using the tool if you want.
