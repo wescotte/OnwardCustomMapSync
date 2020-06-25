@@ -65,8 +65,7 @@ parser.add_argument("-noGUI", help="Disable the GUI and run in console mode", ac
 parser.add_argument("-logResults", help="Write all messages/errors to 'Onward Custom Map Sync.log'", action='store_true')
 parser.add_argument("-justUpdate", help="Only download updates for maps already installed", action='store_true')
 parser.add_argument("-justNew", help="Install only new maps (RELEASE DATE after the last Last_Date_Run in XML settings file) regardless of rating", action='store_true')			   
-parser.add_argument("-scheduleDaily", help="Add an entry to the Windows Task Scheduler to run daily at specified hh:mm in 24-hour clock / miltary time format")
-parser.add_argument("-quiet", help="Disable GUI and don't display any output just write to log file.", action="store_true")
+
 
 args = parser.parse_args()
 ###############################################################################
@@ -220,7 +219,7 @@ def reportMessage(message, logToFile=True):
 	if logFileGlobal is not None and logToFile is True:
 		logFileGlobal.write(datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + " " + message + "\n")
 		
-	if args.noGUI is False and args.quiet is False:
+	if args.noGUI is False:
 		color=COLOR_DEFAULT
 		if message.find("ERROR") != -1:
 			color=COLOR_ERROR_MESSAGE
@@ -253,7 +252,7 @@ def reportMessage(message, logToFile=True):
 					errorMsgBuffer = []
 				errorMsgBuffer.append(message)
 				
-	elif args.quiet is False:
+	else:
 		print(message)
 	
 ###############################################################################
@@ -402,7 +401,7 @@ def filterMap(needStatus, mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 		rating=0
 		
 	if rating == -1:
-		filterMsg="UNAVAILBLE FOR D/L AT AUTHROR'S REQUEST"
+		filterMsg="NOT AVAILABLE PER AUTHOR"		
 		return filterMsg
 		
 	if args.justNew is True:
@@ -422,13 +421,13 @@ def filterMap(needStatus, mapID, mapName, mapAuthor, mapRating, mapReleaseDate):
 	IDFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_ID')
 	for f in IDFilter:
 		if f.text == mapID:
-			reportMessage("{:*^15} {:<35} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
+			#reportMessage("{:*^15} {:<35} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
 			filterMsg = addFilterMsg(filterMsg, "MAP NAME")
 			
 	authorFilter = XMLSettings.xpath('/Onward_Custom_Map_Sync_Settings/Exclude_Maps_Filters/Exlude_Map_Author')
 	for f in authorFilter:
 		if f.text == mapAuthor:
-			reportMessage("{:*^15} {:<35} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
+			#reportMessage("{:*^15} {:<35} by {:<20} Star Rating:{}".format("SKIPPING MAP", mapName, mapAuthor, mapRating))
 			filterMsg = addFilterMsg(filterMsg, "AUTHOR")
 
 	ratingFilter=getXMLRatingFilter()
@@ -660,7 +659,11 @@ def startDownload(progressBarsGUI=False):
 				msg="{:*^15} {:<35}	{:<25} by {:<20}".format("INFO", "Already Installed", maps["MAP NAME"][i], maps["AUTHOR"][i])
 				reportMessage(msg)
 			else:
-				msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("FILTERED BY", maps["MISC FIELDS"][i][13:], maps["MAP NAME"][i], maps["AUTHOR"][i],  maps["RATING"][i])		
+				filterdMsg=maps["MISC FIELDS"][i]
+				# Remove "FILTERED BY:" from the message
+				if filterdMsg.find("FILTERED BY") != -1:
+					filterdMsg=filterdMsg[13:]
+				msg="{:*^15} {:<35} {:<25} by {:<20} Star Rating:{}".format("FILTERED BY", filterdMsg, maps["MAP NAME"][i], maps["AUTHOR"][i],  maps["RATING"][i])		
 				#msg="{:*^15} Already installed	 {:<25} by {:<20}".format("INFO", maps["MAP NAME"][i], maps["AUTHOR"][i])
 				reportMessage(msg)		
 		
@@ -1110,10 +1113,6 @@ if __name__ == "__main__":
 		#ctypes.windll.kernel32.CloseHandle(whnd)			
 			pass
 			
-	if args.scheduleDaily is not None:
-		#createTask(args.scheduleDaily)
-		exit()
-	
 	loadSettings()
 	
 	# If the user specifies to log the 
