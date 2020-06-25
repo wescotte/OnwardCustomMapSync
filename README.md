@@ -34,7 +34,7 @@ All filters can be adjusted manually via your favorite text editor by modifying 
 * **-rating <int>** Specify your rating threshold
 * **-noGUI** Disables GUI interface and automatically starts downloading (using XML setting file filters) when you run the app
 * **-justUpdate** Only downloads updates for maps you already have installed
-* **--justNew** Only downloads new maps that were released after the last time the app was run (last run date stored in XML settings file)
+* **-justNew** Only downloads new maps that were released after the last time the app was run (last run date stored in XML settings file)
 
 ## How this tool works:
 Unfortunately Downpour Interactive doesn't allow their workshop data to be accessible outside of Onward so I personally have to download all the maps and make them publically available via my personal Google Drive. This means I have to keep up with Onward custom map releases for this tool to function. So if you notice Onward is reporting there are updates/new maps but this tool doesn't please let me know (Wescott on the Onward Discord) so I can fix the issue.
