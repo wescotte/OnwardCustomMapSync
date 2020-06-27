@@ -111,8 +111,17 @@ if __name__ == "__main__":
 		today=datetime.date.today().strftime("%m/%d/%Y")
 		if i == -1:
 			print("new row", ID)
-			newRow=["", "", ID, infoHash,today, "", "", zipSize, "", zipHash, ""] 
-			mapList.update(newRow)
+			mapList["MAP NAME"].append("NEW MAP")
+			mapList["AUTHOR"].append("NEW AUTHOR")
+			mapList["ID"].append(ID)
+			mapList["INFO HASH"].append(infoHash)
+			mapList["RELEASE DATE"].append(today)
+			mapList["UPDATE DATE"].append(today)
+			mapList["RATING"].append("-1")
+			mapList["FILE SIZE"].append(zipSize)
+			mapList["DOWNLOAD URL"].append("")
+			mapList["ZIP HASH"].append(zipHash)												
+			mapList["MISC FIELDS"].append("")	
 		else:
 			mapList["INFO HASH"][i]=infoHash
 			mapList["UPDATE DATE"][i]=today
