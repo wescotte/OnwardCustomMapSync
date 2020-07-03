@@ -717,15 +717,11 @@ def displayGUI():
 	table=sg.Table(values=[], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
-					#col_widths=[30,25,45, 12,12,13,13],
 					col_widths=[21,15,35, 8,5,10,10],					
-					#col_widths=[15,10,35, 5,6,9,8],
-					#justification='center',
 					justification='left',
 					num_rows=20,
 					key='MAPS_TABLE',
 					vertical_scroll_only=False,
-					#font='Courier 12',
 					font='Times 12',
 					header_font='Times 15')
 
