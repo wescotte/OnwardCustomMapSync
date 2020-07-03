@@ -603,11 +603,11 @@ def startDownload(progressBarsGUI=False):
 			# Goofy bug with pySimgpleGUI where if the string grows by a character it truncates....
 			# So just tack on a bunch of spaces at the end as a temporay fix	
 			mapProgressText=sg.Text('Downloading Map: {:50}'.format(maps["MAP NAME"][0]), key='MAP_PROGRESS_TEXT')
-			mapProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='MAP_PROGRESS')
+			mapProgress=sg.ProgressBar(1, orientation='h', size=(90, 20), key='MAP_PROGRESS')
 			allProgressText=sg.Text('Total Progress: Map 1 of {:50}'.format(summaryData["totalToInstall"]), key='ALL_PROGRESS_TEXT')
-			allProgress=sg.ProgressBar(1, orientation='h', size=(57, 20), key='ALL_PROGRESS')
+			allProgress=sg.ProgressBar(1, orientation='h', size=(90, 20), key='ALL_PROGRESS')
 
-			installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="Courier 7", background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
+			installLog=sg.MLine(default_text='', size=(120, 10), autoscroll=True, font="Courier 10", background_color=COLOR_BACKGROUND, key='INSTALL_LOG')	
 			installLogObjs=[[installLog]]
 			installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 		
@@ -717,13 +717,17 @@ def displayGUI():
 	table=sg.Table(values=[], headings=headings, max_col_width=55,
 					auto_size_columns=False,
 					display_row_numbers=False,
-					col_widths=[30,25,45, 12,12,13,13],
-					justification='center',
+					#col_widths=[30,25,45, 12,12,13,13],
+					col_widths=[21,15,35, 8,5,10,10],					
+					#col_widths=[15,10,35, 5,6,9,8],
+					#justification='center',
+					justification='left',
 					num_rows=20,
 					key='MAPS_TABLE',
 					vertical_scroll_only=False,
-					font='Courier 7',
-					header_font='Courier 9')
+					#font='Courier 12',
+					font='Times 12',
+					header_font='Times 15')
 
 
 	###########################################################################
@@ -734,28 +738,28 @@ def displayGUI():
 		qfDefault=1
 	elif args.justUpdate is False and args.justNew is True:
 		qfDefault=2
-	quickFiltersCombobox=sg.Combo(quickFiltersList, readonly=True, visible=True, size=(32,1), default_value=quickFiltersList[qfDefault], font='Courier 8', change_submits=True, key="QF_SELECTED")
-	quickFiltersFrame=sg.Frame(title="Quick Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[[quickFiltersCombobox]])	
+	quickFiltersCombobox=sg.Combo(quickFiltersList, readonly=True, visible=True, size=(32,1), default_value=quickFiltersList[qfDefault], font='Courier 10', change_submits=True, key="QF_SELECTED")
+	quickFiltersFrame=sg.Frame(title="Quick Filters", title_location="n", element_justification="center", relief="groove", font='Courier 14', pad=((25,25),(0,4)), layout=[[quickFiltersCombobox]])	
 	
 	###########################################################################
 	# Filter Selected
-	includeBtn=sg.Button(button_text="Include", size=(7,1), font='Courier 8', key='INCLUDE_SELECTED')
-	excludeBtn=sg.Button(button_text="Exclude", size=(7,1), font='Courier 8', key='EXCLUDE_SELECTED')		
+	includeBtn=sg.Button(button_text="Include", size=(8,1), font='Courier 12', pad=(5,2), key='INCLUDE_SELECTED')
+	excludeBtn=sg.Button(button_text="Exclude", size=(8,1), font='Courier 12', pad=(5,2), key='EXCLUDE_SELECTED')		
 	seletedFilterObjs=[includeBtn, excludeBtn]
-	filterFrameSelected=sg.Frame(title="Selected Maps", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[seletedFilterObjs]) 
+	filterFrameSelected=sg.Frame(title="Selected Maps", title_location="n", element_justification="center", relief="groove", font='Courier 14', pad=((25,25),(0,4)), layout=[seletedFilterObjs]) 
 	
 	###########################################################################
 	# Author Filter
 	authorList=list(set( maps["AUTHOR"]))	# Get unique lists of Authors
 	authorList.sort(key=str.casefold)		# Put authors in ABC order
-	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), font='Courier 8', change_submits=True, default_value=authorList[0], key="AUTHOR_SELECTED")
+	authorListCombobox=sg.Combo(authorList, readonly=True, visible=True, size=(20,1), font='Courier 10', change_submits=True, default_value=authorList[0], key="AUTHOR_SELECTED")
 	# Since we need to keep the FILTER/CLEAR in sync we need to check if the default authtor is currently being filtered or not
 	btnText="EXCLUDE"
 	if processXMLFilter("EXISTS", "Exlude_Map_Author", authorList[0]):
 		btnText="INCLUDE"
-	authorBtn=sg.Button(button_text=btnText, size=(7,1), font='Courier 8', key='AUTHOR')	
+	authorBtn=sg.Button(button_text=btnText, size=(8,1), font='Courier 12', pad=(5,2), key='AUTHOR')	
 	authorObjs=[authorListCombobox, authorBtn]
-	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[authorObjs]) 
+	filterFrameAuthor=sg.Frame(title="Author", title_location="n", element_justification="center", relief="groove", font='Courier 14', pad=((25,25),(0,4)), layout=[authorObjs]) 
 
 	###########################################################################	
 	# Rating Filter
@@ -763,41 +767,41 @@ def displayGUI():
 	
 	ratingList=["All", "1 Star", "2 Star", "3 Star", "4 Star", "5 Star"]
 	ratingListCombobox=sg.Combo(ratingList, readonly=True, visible=True, size=(8,1), default_value=ratingList[ratingFilter], font='Courier 10',)
-	ratingBtn=sg.Button(button_text="Apply", size=(7,1), font='Courier 8', key='RATING')		
+	ratingBtn=sg.Button(button_text="Apply", size=(8,1), font='Courier 12',  pad=(5,2), key='RATING')		
 	ratingObjs=[ratingListCombobox, ratingBtn]
-	filterFrameRating=sg.Frame(title="Min Star Rating", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(1,0,0,4), layout=[ratingObjs]) 
+	filterFrameRating=sg.Frame(title="Min Star Rating", title_location="n", element_justification="center", relief="groove", font='Courier 14', pad=((25,25),(0,4)), layout=[ratingObjs]) 
 	
 	###########################################################################	
 	# Filters Layout
 	filterFrameObjs=[quickFiltersFrame, filterFrameSelected, filterFrameAuthor, filterFrameRating]
-	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", pad=(1,1,0,4),layout=[filterFrameObjs]) 
+	filterFrame=sg.Frame(title="Exclude Installing Maps By", title_location="n", relief="groove", font='Courier 16', layout=[filterFrameObjs]) 
 
 	###########################################################################
 	# Summary
-	summaryLine=sg.Text("",size=(80,2), key='SUMMARY_LINE')	
-	installLog=sg.MLine(default_text='', size=(150, 10), autoscroll=True, font='Courier 7', background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
+	summaryLine=sg.Text("",size=(120,2), key='SUMMARY_LINE')	
+	installLog=sg.MLine(default_text='', size=(200, 10), autoscroll=True, font='Courier 10', background_color=COLOR_BACKGROUND, key='INSTALL_LOG')
 	installLogObjs=[[installLog], [summaryLine]]
 	installLogFrame=sg.Frame(title="Install Log", title_location="n", element_justification="center", relief="groove", layout=installLogObjs) 
 	
 	###########################################################################
 	# Bottom Row
-	startDownloadBtn=sg.Button(button_text="Start Download", size=(10,2), key='DOWNLOAD')
-	helpBtn=sg.Button(button_text="Help", key='HELP')
+	startDownloadBtn=sg.Button(button_text="Start Downloading", size=(12,2), font="Courier 18", pad=((15,15), (5,0)), key='DOWNLOAD')
+	helpBtn=sg.Button(button_text="Help", font="Courier 14", size=(6,1), pad=(10,0), key='HELP')
 	###########################################################################
 	# Settings objects
-	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 8', key="LOAD"),		\
-							sg.Button(button_text="Save", size=(8,1), font='Courier 8', key="SAVE"),		\
-							sg.Button(button_text="Default", size=(8,1), font='Courier 8',key="DEFAULT")	\
+	settingsObjs=	[		sg.Button(button_text="Load", size=(8,1), font='Courier 12', key="LOAD"),		\
+							sg.Button(button_text="Save", size=(8,1), font='Courier 12', key="SAVE"),		\
+							sg.Button(button_text="Default", size=(8,1), font='Courier 12',key="DEFAULT")	\
 					]
-	settingFrame=sg.Frame(title="Filters", title_location="n", element_justification="center", relief="groove", font='Courier 10', pad=(0,0,0,4), layout=[settingsObjs]) 
+	settingFrame=sg.Frame(title="Filters", title_location="n", element_justification="center", relief="groove", font='Courier 14', pad=((25,25),(0,4)), layout=[settingsObjs]) 
 	
-	SchedHourText=sg.Text('Hour:')
-	SchedHour=sg.Combo(list(range(0,23)), readonly=True, visible=True, size=(2,1), default_value="23", font='Courier 10', key='SCHEDULE_HOUR')
-	SchedMinText=sg.Text('Min:')	
-	SchedMin=sg.Combo(["00","15","30","45"], readonly=True, visible=True, size=(2,1), default_value="30", font='Courier 10',  key='SCHEDULE_MIN')	
-	taskSchedBtn=sg.Button(button_text="Schedule Task", key='SCHEDULE')
+	SchedHourText=sg.Text('Hour:', font='Courier 14')
+	SchedHour=sg.Combo(list(range(0,23)), readonly=True, visible=True, size=(2,1), default_value="23", font='Courier 14', key='SCHEDULE_HOUR')
+	SchedMinText=sg.Text('Min:', font='Courier 14')	
+	SchedMin=sg.Combo(["00","15","30","45"], readonly=True, visible=True, size=(2,1), default_value="30", font='Courier 14',  key='SCHEDULE_MIN')	
+	taskSchedBtn=sg.Button(button_text="Schedule Task", pad=((50,25), (2,2)), key='SCHEDULE')
 	schedObjs=[[SchedHourText, SchedHour, SchedMinText, SchedMin, taskSchedBtn]]
-	taskSchedFrame=sg.Frame(title="Run Daily via Windows Task Scheduler", title_location="n", element_justification="center", relief="groove", layout=schedObjs) 
+	taskSchedFrame=sg.Frame(title="Run Daily via Windows Task Scheduler", title_location="n", element_justification="center", relief="groove",  font='Courier 14', pad=((25,25),(0,4)), layout=schedObjs) 
 		
 	###########################################################################
 	# Layout of GUI
@@ -805,7 +809,7 @@ def displayGUI():
 
 	# ------ Create Window ------
 	#sg.change_look_and_feel('GreenTan')
-	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(800,650) )
+	window = sg.Window('Onward Custom Map Installer', layout, font='Courier 12', size=(1200,850), grab_anywhere=True )
 
 	# Finalize the layout and then update populate the table / status lines otherwise won't update until user does something to trigger the event loop	
 	window.Finalize()	
@@ -919,7 +923,7 @@ def updateMapData(window, summaryData):
 			rc.append((i,COLOR_FILTERED, COLOR_BACKGROUND))
 		else:
 			rc.append((i,COLOR_DEFAULT, COLOR_BACKGROUND))
-	summaryText='To Install:{:<4}Already Installed:{:<4}Maps Excluded:{:<4}Total Maps:{:<4}\nExcluded By	Rating:{:<4}Author:{:<4}Name:{:<4}Release Date:{:<4}'.format( \
+	summaryText='Total To Install:{:<4}\t\tAlready Installed:{:<4}Maps Excluded:{:<4}\t\tTotal Maps:{:<4}\nMaps Excluded By\t\tRating:{:<4}Author:{:<4}Name:{:<4}Release Date:{:<4}'.format( \
 			summaryData["totalToInstall"], summaryData["totalAlreadyInstalled"], summaryData["totalExcluded"], summaryData["totalMaps"],  \
 			summaryData["totalSkippedRating"], summaryData["totalSkippedAuthor"], summaryData["totalSkippedName"], summaryData["totalSkippedNotNewRelease"] )
 	
@@ -1108,7 +1112,7 @@ if __name__ == "__main__":
 			import ctypes
 		whnd = ctypes.windll.kernel32.GetConsoleWindow()
 		if whnd != 0:
-			ctypes.windll.user32.ShowWindow(whnd, 0)
+			# ctypes.windll.user32.ShowWindow(whnd, 0)
 		# if you wanted to close the handles...
 		#ctypes.windll.kernel32.CloseHandle(whnd)			
 			pass
