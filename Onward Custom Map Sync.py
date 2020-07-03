@@ -27,7 +27,7 @@ import PySimpleGUI as sg
 ###############################################################################
 # Global Variables
 ###############################################################################
-appVersion = 1.00
+appVersion = 1.01
 
 filenameMapList = "Map List.csv"
 logFilename = "Onward Custom Map Sync.log"
@@ -1108,7 +1108,7 @@ if __name__ == "__main__":
 			import ctypes
 		whnd = ctypes.windll.kernel32.GetConsoleWindow()
 		if whnd != 0:
-			# ctypes.windll.user32.ShowWindow(whnd, 0)
+			ctypes.windll.user32.ShowWindow(whnd, 0)
 		# if you wanted to close the handles...
 		#ctypes.windll.kernel32.CloseHandle(whnd)			
 			pass
