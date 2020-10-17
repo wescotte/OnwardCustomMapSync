@@ -27,7 +27,7 @@ import PySimpleGUI as sg
 ###############################################################################
 # Global Variables
 ###############################################################################
-appVersion = 1.01
+appVersion = 1.02
 
 filenameMapList = "Map List.csv"
 logFilename = "Onward Custom Map Sync.log"
@@ -458,8 +458,8 @@ def addFilterMsg(filterMsg, newMessage):
 #	"UPDATE"	Map installed but detecting a newer version is available
 ###############################################################################
 def needMap(mapID, mapHash):
-	infoFile=onwardPath + mapFolder + mapID + ".info"
-	contentFile=onwardPath + mapFolder + mapID + ".content"	 
+	infoFile=onwardPath + mapFolder + mapID + ".info2"
+	contentFile=onwardPath + mapFolder + mapID + ".content2"	 
 
 	# If .content file doesn't exist you need to download the map
 	my_file = Path(contentFile)

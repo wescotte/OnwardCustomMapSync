@@ -83,7 +83,7 @@ if __name__ == "__main__":
 	f.close()
 		
 	
-	mapFiles=glob.glob("CustomContent/*.info")
+	mapFiles=glob.glob("CustomContent/*.info2")
 	
 	for fname in mapFiles:
 		p = fname.rfind(".")
@@ -92,7 +92,7 @@ if __name__ == "__main__":
 		ID=ID[slash+1:]
 		
 		zipFN= fname[:p] + ".zip"
-		contentFN= fname[:p] + ".content"
+		contentFN= fname[:p] + ".content2"
 		
 		infoHash=getHash(fname)
 
